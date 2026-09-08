@@ -13,6 +13,7 @@ type Screen = "main" | "settings" | "invalid";
 type Action =
 	| "compact-now"
 	| "set-enabled"
+	| "set-experimental"
 	| "set-protocol"
 	| "set-timeout"
 	| "set-retries"
@@ -22,6 +23,7 @@ type Action =
 export interface SettingsMenuOwner {
 	signal: AbortSignal;
 	isCurrent(): boolean;
+	onSettingsChanged?(): void;
 }
 
 interface CompactMenuStatus {
@@ -57,7 +59,7 @@ async function update(
 	try {
 		await runtime.update(patch, signal);
 		if (signal.aborted) return { kind: "rejected" as const };
-		ctx.ui.notify("Responses compaction settings saved.", "info");
+		ctx.ui.notify("Codex compaction settings saved.", "info");
 		return { kind: "stay" as const };
 	} catch (error) {
 		if (signal.aborted) return { kind: "rejected" as const };
@@ -71,15 +73,20 @@ async function update(
 
 export function createCodexCompactMenu(
 	runtime: CodexCompactSettingsRuntime,
-	options: { onCompactRequested?: () => void; status?: CompactMenuStatus } = {},
+	options: {
+		onCompactRequested?: () => void;
+		onSettingsChanged?: () => void;
+		status?: CompactMenuStatus;
+	} = {},
 ): MenuDefinition<CodexCompactSettingsState, Screen, Action, ExtensionCommandContext> {
 	return {
 		start: "main",
 		screens: {
 			main: ({ state }) => ({
 				kind: "actions",
-				title: "Responses Compaction",
+				title: "Codex Compaction",
 				lines: [
+					`Experimental context management: ${state.settings.experimentalContextManagement ? "On" : "Off"}`,
 					`Remote compaction: ${state.settings.enabled ? "On" : "Off"}`,
 					`Protocol setting: ${protocolLabel(state.settings.protocol)}`,
 					`Active model: ${safeText(options.status?.model ?? "none")}`,
@@ -106,9 +113,18 @@ export function createCodexCompactMenu(
 			}),
 			settings: ({ state }) => ({
 				kind: "settings",
-				title: "Responses Compaction Settings",
+				title: "Codex Compaction Settings",
 				lines: [`User settings · ${safeText(state.path)}`],
 				items: [
+					{
+						id: "experimentalContextManagement",
+						label: "Experimental context management",
+						description:
+							"Use summary-free local rollover and four memory tools. Experimental; remote settings are dormant while enabled.",
+						currentValue: state.settings.experimentalContextManagement ? "On" : "Off",
+						values: ["On", "Off"],
+						action: "set-experimental",
+					},
 					{
 						id: "enabled",
 						label: "Remote compaction",
@@ -177,6 +193,16 @@ export function createCodexCompactMenu(
 			},
 			"set-enabled": ({ ctx, value, signal }) =>
 				update(runtime, ctx, { enabled: value === "On" }, signal),
+			"set-experimental": async ({ ctx, value, signal }) => {
+				const result = await update(
+					runtime,
+					ctx,
+					{ experimentalContextManagement: value === "On" },
+					signal,
+				);
+				if (result.kind === "stay" && !signal.aborted) options.onSettingsChanged?.();
+				return result;
+			},
 			"set-protocol": ({ ctx, value, signal }) =>
 				update(
 					runtime,
@@ -234,6 +260,7 @@ export async function showCodexCompactMenu(
 			onCompactRequested: () => {
 				compactRequested = true;
 			},
+			onSettingsChanged: owner.onSettingsChanged,
 			status: compactMenuStatus(ctx),
 		}),
 		{
@@ -264,6 +291,7 @@ function compactRoute(
 	state: Readonly<CodexCompactSettingsState>,
 	status: CompactMenuStatus | undefined,
 ): string {
+	if (state.settings.experimentalContextManagement) return "Experimental summary-free rollover";
 	const route = resolveCompactionRouteForApi(status?.api, state.settings);
 	if (route.kind === "native") return `Pi native (${route.reason})`;
 	return route.protocol === "remote-v2" ? "Responses Remote V2" : "Responses Compact API";

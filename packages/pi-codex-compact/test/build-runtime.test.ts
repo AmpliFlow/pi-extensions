@@ -193,6 +193,10 @@ test("generated runtime is loadable by Pi's Jiti resource loader", async () => {
 		assert.equal(loaded.extensions.length, 1);
 		const extension = loaded.extensions[0];
 		assert.ok(extension?.commands.has("codex-compact"));
+		assert.deepEqual(
+			[...(extension?.tools.keys() ?? [])],
+			["start_new_context", "get_context_remaining", "recall_context", "update_notes"],
+		);
 		assert.ok(extension?.handlers.has("session_start"));
 		assert.ok(extension?.handlers.has("session_shutdown"));
 	} finally {

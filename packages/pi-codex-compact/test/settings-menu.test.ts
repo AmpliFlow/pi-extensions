@@ -86,6 +86,16 @@ test("root menu makes manual compaction primary and exposes its effective route"
 	assert.equal(disabled.kind, "actions");
 	if (disabled.kind !== "actions") assert.fail("Expected disabled actions screen");
 	assert.match(disabled.lines?.join("\n") ?? "", /Pi native \(remote compaction is disabled\)/);
+	const experimental = resolveMenuScreen(menu, "main", {
+		...current.runtime.get(),
+		settings: {
+			...current.runtime.get().settings,
+			experimentalContextManagement: true,
+		},
+	});
+	assert.equal(experimental.kind, "actions");
+	if (experimental.kind !== "actions") assert.fail("Expected experimental actions screen");
+	assert.match(experimental.lines?.join("\n") ?? "", /Experimental summary-free rollover/);
 	const openAI = resolveMenuScreen(
 		createCodexCompactMenu(current.runtime, { status: openAIStatus }),
 		"main",
@@ -105,6 +115,7 @@ test("settings screen exposes bounded controls and invalid files remain repairab
 	assert.deepEqual(
 		screen.items.map((item) => [item.id, item.currentValue]),
 		[
+			["experimentalContextManagement", "Off"],
 			["enabled", "On"],
 			["protocol", "Auto"],
 			["requestTimeoutMs", "5 min"],
@@ -144,9 +155,14 @@ test("manual action closes the menu and records one explicit request", async () 
 	assert.equal(requests, 1);
 });
 
-test("menu actions persist exact setting patches", async () => {
+test("menu actions persist exact setting patches and apply experimental mode immediately", async () => {
 	const memory = memoryRuntime();
-	const menu = createCodexCompactMenu(memory.runtime);
+	let settingsChanges = 0;
+	const menu = createCodexCompactMenu(memory.runtime, {
+		onSettingsChanged: () => {
+			settingsChanges += 1;
+		},
+	});
 	const { ctx } = createMockContext({ mode: "tui" });
 	const action = (value: string) => ({
 		ctx,
@@ -155,13 +171,16 @@ test("menu actions persist exact setting patches", async () => {
 		itemId: "setting",
 		value,
 	});
+	await menu.actions["set-experimental"](action("On"));
 	await menu.actions["set-enabled"](action("Off"));
 	await menu.actions["set-protocol"](action("Responses Compact"));
 	await menu.actions["set-timeout"](action("10 min"));
 	await menu.actions["set-retries"](action("1"));
 	await menu.actions["set-retention"](action("96K tokens"));
 	await menu.actions["set-notify"](action("Off"));
+	assert.equal(settingsChanges, 1);
 	assert.deepEqual(memory.patches, [
+		{ experimentalContextManagement: true },
 		{ enabled: false },
 		{ protocol: "responses-compact" },
 		{ requestTimeoutMs: 600_000 },
