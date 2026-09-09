@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { type SessionEntry, sessionEntryToContextMessages } from "@earendil-works/pi-coding-agent";
 import {
@@ -12,7 +13,7 @@ export const MAX_RECALL_QUERY_LENGTH = 512;
 export const MAX_RECALL_RESULT_BYTES = 32 * 1024;
 export const MAX_RECALL_MATCHES = 20;
 const MAX_INDEXED_MESSAGE_CHARS = 256 * 1024;
-const READ_CHUNK_CHARS = 24 * 1024;
+const READ_CHUNK_BYTES = 12 * 1024;
 
 export type RecallSource = "history" | "notes";
 export type RecallAction = "list" | "read" | "search";
@@ -106,9 +107,18 @@ export function historyItems(entries: readonly SessionEntry[]): HistoryItem[] {
 	return items;
 }
 
+function displayText(value: string): string {
+	return Array.from(stripVTControlCharacters(value), (character) => {
+		const codePoint = character.codePointAt(0) ?? 0;
+		if (codePoint === 9 || codePoint === 10 || codePoint === 13) return character;
+		return codePoint < 32 || (codePoint >= 127 && codePoint <= 159) ? " " : character;
+	}).join("");
+}
+
 function preview(value: string): string {
-	const compact = value.replace(/\s+/g, " ").trim();
-	return compact.length > 240 ? `${compact.slice(0, 239)}…` : compact;
+	const compact = displayText(value).replace(/\s+/g, " ").trim();
+	const characters = Array.from(compact);
+	return characters.length > 240 ? `${characters.slice(0, 239).join("")}…` : compact;
 }
 
 function paged<T>(values: readonly T[], offset: number) {
@@ -122,20 +132,40 @@ function paged<T>(values: readonly T[], offset: number) {
 
 function readChunk(value: string, offset: number) {
 	if (offset > value.length) throw new Error("recall_context cursor exceeds the selected item");
-	const chunk = value.slice(offset, offset + READ_CHUNK_CHARS);
-	const next = offset + chunk.length;
+	if (
+		offset > 0 &&
+		offset < value.length &&
+		/[\uDC00-\uDFFF]/.test(value[offset]) &&
+		/[\uD800-\uDBFF]/.test(value[offset - 1])
+	) {
+		throw new Error("recall_context cursor splits a Unicode code point");
+	}
+	let bytes = 0;
+	let next = offset;
+	for (const character of value.slice(offset)) {
+		const characterBytes = Buffer.byteLength(character, "utf8");
+		if (bytes + characterBytes > READ_CHUNK_BYTES) break;
+		bytes += characterBytes;
+		next += character.length;
+	}
+	const chunk = value.slice(offset, next);
 	return {
 		chunk,
 		...(next < value.length ? { nextCursor: String(next) } : {}),
 	};
 }
 
+function sanitizeJsonValue(value: unknown): unknown {
+	if (typeof value === "string") return displayText(value);
+	if (Array.isArray(value)) return value.map(sanitizeJsonValue);
+	if (typeof value !== "object" || value === null) return value;
+	return Object.fromEntries(
+		Object.entries(value).map(([key, item]) => [displayText(key), sanitizeJsonValue(item)]),
+	);
+}
+
 function safeJson(value: unknown): string {
-	const text = Array.from(JSON.stringify(value, null, 2), (character) => {
-		const codePoint = character.codePointAt(0) ?? 0;
-		if (codePoint === 10) return character;
-		return codePoint < 32 || (codePoint >= 127 && codePoint <= 159) ? " " : character;
-	}).join("");
+	const text = JSON.stringify(sanitizeJsonValue(value), null, 2);
 	if (Buffer.byteLength(text, "utf8") > MAX_RECALL_RESULT_BYTES) {
 		throw new Error("recall_context result exceeded its output limit");
 	}
@@ -188,10 +218,10 @@ export function recallContext(
 				details: { source: "notes", id: note.name, ...page },
 			};
 		}
-		const query = input.query?.toLocaleLowerCase() ?? "";
+		const query = input.query?.toLowerCase() ?? "";
 		const matches = notes.filter((note) =>
 			`${note.name}\n${note.content.slice(0, MAX_INDEXED_MESSAGE_CHARS)}`
-				.toLocaleLowerCase()
+				.toLowerCase()
 				.includes(query),
 		);
 		const page = paged(
@@ -230,9 +260,9 @@ export function recallContext(
 			details: { source: "history", id: item.id, ...page },
 		};
 	}
-	const query = input.query?.toLocaleLowerCase() ?? "";
+	const query = input.query?.toLowerCase() ?? "";
 	const matches = history.filter((item) =>
-		item.content.slice(0, MAX_INDEXED_MESSAGE_CHARS).toLocaleLowerCase().includes(query),
+		item.content.slice(0, MAX_INDEXED_MESSAGE_CHARS).toLowerCase().includes(query),
 	);
 	const page = paged(
 		matches.map((item) => ({

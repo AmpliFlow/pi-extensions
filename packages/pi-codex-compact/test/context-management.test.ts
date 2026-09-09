@@ -4,6 +4,13 @@ import { test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
 import { createCodexCompactExtension } from "../src/codex-compact.js";
 import { EXPERIMENTAL_CONTEXT_TOOL_NAMES } from "../src/context-tools.js";
+import {
+	CONTEXT_CONTRACT_MESSAGE_TYPE,
+	CONTEXT_DEACTIVATION_MESSAGE_TYPE,
+	contextContract,
+	createExperimentalContextDetails,
+	createInitialContextState,
+} from "../src/context-window.js";
 import type { CodexCompactSettingsRuntime, CodexCompactSettingsState } from "../src/settings.js";
 import { DEFAULT_CODEX_COMPACT_SETTINGS } from "../src/settings.js";
 
@@ -42,6 +49,7 @@ function messageEntry(): SessionEntry {
 
 function setup(enabled = true, fetch?: typeof globalThis.fetch) {
 	const mock = createMockPi({ activeTools: ["read"] });
+	const runtime = settingsRuntime(enabled);
 	const entries: SessionEntry[] = [messageEntry()];
 	mock.rawPi.appendEntry = (customType, data) => {
 		mock.entries.push({ customType, data });
@@ -74,9 +82,23 @@ function setup(enabled = true, fetch?: typeof globalThis.fetch) {
 			compactOptions = options;
 		},
 	});
-	createCodexCompactExtension({ settingsRuntime: settingsRuntime(enabled), fetch })(mock.pi);
+	createCodexCompactExtension({ settingsRuntime: runtime, fetch })(mock.pi);
+	mock.rawPi.getAllTools = () =>
+		mock.tools.map((definition) => ({
+			name: definition.name,
+			description: definition.description,
+			parameters: definition.parameters,
+			promptGuidelines: definition.promptGuidelines,
+			sourceInfo: {
+				path: "/tmp/pi-codex-compact/src/index.ts",
+				source: "test",
+				scope: "temporary",
+				origin: "top-level",
+			},
+		}));
 	return {
 		mock,
+		runtime,
 		entries,
 		current,
 		get compactOptions() {
@@ -103,6 +125,67 @@ function tool(setupResult: ReturnType<typeof setup>, name: string) {
 		promptSnippet?: string;
 		promptGuidelines?: string[];
 	};
+}
+
+async function emitAutomaticCompaction(
+	current: ReturnType<typeof setup>,
+	overrideDetails?: unknown | ((details: unknown) => unknown),
+) {
+	const before = current.mock.events.get("session_before_compact")?.[0];
+	assert.ok(before);
+	const result = (await before(
+		{
+			type: "session_before_compact",
+			preparation: {
+				firstKeptEntryId: "user",
+				messagesToSummarize: [],
+				turnPrefixMessages: [],
+				isSplitTurn: false,
+				tokensBefore: 90,
+				fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+				settings: { enabled: true, reserveTokens: 10, keepRecentTokens: 10 },
+			},
+			branchEntries: current.entries,
+			reason: "threshold",
+			willRetry: false,
+			signal: new AbortController().signal,
+		},
+		current.current.ctx,
+	)) as {
+		compaction: {
+			summary: string;
+			firstKeptEntryId: string;
+			tokensBefore: number;
+			details: unknown;
+		};
+	};
+	const compactEntry = {
+		type: "compaction",
+		id: "automatic-helper",
+		parentId: current.entries.at(-1)?.id ?? null,
+		timestamp: "2026-01-01T00:00:03.000Z",
+		...result.compaction,
+		...(overrideDetails === undefined
+			? {}
+			: {
+					details:
+						typeof overrideDetails === "function"
+							? overrideDetails(result.compaction.details)
+							: overrideDetails,
+				}),
+	};
+	current.entries.push(compactEntry as SessionEntry);
+	await current.mock.events.get("session_compact")?.[0](
+		{
+			type: "session_compact",
+			compactionEntry: compactEntry,
+			fromExtension: true,
+			reason: "threshold",
+			willRetry: false,
+		},
+		current.current.ctx,
+	);
+	return { result, compactEntry };
 }
 
 test("opt-in activates exactly four context tools after unrelated tools", async () => {
@@ -138,6 +221,69 @@ test("default-off removes context tools and stale calls fail", async () => {
 		/disabled/,
 	);
 });
+
+test("a colliding tool prevents activation without disabling the other extension tool", async () => {
+	const current = setup();
+	const getAllTools = current.mock.rawPi.getAllTools.bind(current.mock.rawPi);
+	current.mock.rawPi.getAllTools = () =>
+		getAllTools().map((toolInfo) => {
+			const tool = toolInfo as { name?: string; description?: string };
+			return tool.name === "start_new_context"
+				? { ...tool, description: "Another extension owns this tool." }
+				: tool;
+		});
+	current.mock.rawPi.setActiveTools(["read", ...EXPERIMENTAL_CONTEXT_TOOL_NAMES]);
+	await start(current);
+	assert.deepEqual(current.mock.rawPi.getActiveTools(), ["read", "start_new_context"]);
+	assert.equal(current.mock.sentMessages.length, 0);
+	assert.match(current.current.notifications[0]?.message ?? "", /could not activate/);
+});
+
+test.each(["message", "compaction"] as const)(
+	"disabled mode appends a deactivation transition after an experimental %s marker",
+	async (marker) => {
+		const current = setup(false);
+		const lineage = createInitialContextState("11111111-1111-4111-8111-111111111111");
+		if (marker === "message") {
+			current.entries.push({
+				type: "message",
+				id: "contract",
+				parentId: "user",
+				timestamp: "2026-01-01T00:00:01.000Z",
+				message: {
+					role: "custom",
+					customType: CONTEXT_CONTRACT_MESSAGE_TYPE,
+					content: contextContract(lineage),
+					display: false,
+					timestamp: 2,
+				},
+			});
+		} else {
+			const details = createExperimentalContextDetails({
+				lineage,
+				keptMessages: [],
+				reason: "manual",
+				windowId: "22222222-2222-4222-8222-222222222222",
+			});
+			current.entries.push({
+				type: "compaction",
+				id: "compaction",
+				parentId: "user",
+				timestamp: "2026-01-01T00:00:01.000Z",
+				summary: contextContract(details),
+				firstKeptEntryId: "user",
+				tokensBefore: 10,
+				details,
+			});
+		}
+		await start(current);
+		const transition = current.mock.sentMessages.at(-1)?.message as
+			| { customType?: string }
+			| undefined;
+		assert.equal(transition?.customType, CONTEXT_DEACTIVATION_MESSAGE_TYPE);
+		assert.deepEqual(current.mock.rawPi.getActiveTools(), ["read"]);
+	},
+);
 
 test("usage and notes tools remain observational and branch-persistent", async () => {
 	const current = setup();
@@ -361,6 +507,72 @@ test("automatic compaction consumes a pending request before settlement", async 
 		1,
 	);
 });
+
+test("a post-compaction Pi turn suppresses the fallback continuation", async () => {
+	const current = setup();
+	await start(current);
+	await tool(current, "start_new_context").execute(
+		"start",
+		{},
+		undefined,
+		undefined,
+		current.current.ctx,
+	);
+	await emitAutomaticCompaction(current);
+	await current.mock.events.get("turn_start")?.[0](
+		{ type: "turn_start", turnIndex: 1, timestamp: Date.now() },
+		current.current.ctx,
+	);
+	await current.mock.events.get("agent_settled")?.[0](
+		{ type: "agent_settled" },
+		current.current.ctx,
+	);
+	assert.equal(
+		current.mock.sentMessages.filter(
+			(item) => (item.options as { triggerTurn?: boolean } | undefined)?.triggerTurn,
+		).length,
+		0,
+	);
+});
+
+test.each(["missing", "mismatched"] as const)(
+	"a replaced compaction result with %s details fails and releases the pending rollover",
+	async (replacement) => {
+		const current = setup();
+		await start(current);
+		await tool(current, "start_new_context").execute(
+			"start",
+			{},
+			undefined,
+			undefined,
+			current.current.ctx,
+		);
+		await emitAutomaticCompaction(
+			current,
+			replacement === "missing"
+				? null
+				: (details: unknown) => ({
+						...(details as Record<string, unknown>),
+						requestId: "different-request-id",
+					}),
+		);
+		await current.mock.events.get("agent_settled")?.[0](
+			{ type: "agent_settled" },
+			current.current.ctx,
+		);
+		assert.match(
+			JSON.stringify(current.mock.sentMessages.at(-1)),
+			/without the requested context marker/,
+		);
+		await tool(current, "start_new_context").execute(
+			"retry",
+			{},
+			undefined,
+			undefined,
+			current.current.ctx,
+		);
+	},
+);
 
 test("failed automatic rollover preserves the old context and reports once at settlement", async () => {
 	const current = setup();

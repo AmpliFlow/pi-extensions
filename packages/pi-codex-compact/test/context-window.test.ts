@@ -124,6 +124,36 @@ test("projects only an exactly fingerprinted retained prefix", () => {
 	assert.deepEqual(secondProjection?.slice(0, firstProjection?.length), firstProjection);
 });
 
+test("fails closed when the active compaction summary timestamp is non-finite", () => {
+	const kept = message("kept", 2);
+	const details = createExperimentalContextDetails({
+		lineage: createInitialContextState(first),
+		keptMessages: [kept],
+		reason: "threshold",
+		windowId: second,
+	});
+	const summary: AgentMessage = {
+		role: "compactionSummary",
+		summary: contextContract(details),
+		tokensBefore: 100,
+		timestamp: Number.POSITIVE_INFINITY,
+	};
+	const olderSummary: AgentMessage = {
+		role: "compactionSummary",
+		summary: "older",
+		tokensBefore: 50,
+		timestamp: 1,
+	};
+	const entry = {
+		type: "compaction",
+		summary: contextContract(details),
+	} as CompactionEntry<typeof details>;
+	assert.equal(
+		projectExperimentalContext([summary, olderSummary, kept], entry, details),
+		undefined,
+	);
+});
+
 test("restores exactly one current context contract", () => {
 	const lineage = createInitialContextState(first);
 	const ordinary = [message("hello", 1)];

@@ -43,7 +43,8 @@ flowchart TD
 
 All four tools are active only while the experiment is enabled. Their definitions intentionally omit
 system-prompt snippets and guidelines; one hidden, versioned context contract provides stable model
-guidance.
+guidance. If another extension owns any of the four global tool names, activation fails as a unit,
+keeps the other extension's tool active, warns the user, and leaves Pi-native compaction in control.
 
 ### `start_new_context`
 
@@ -198,9 +199,10 @@ stored only in that checkpoint. The extension warns once, keeps the checkpoint u
 recall only plaintext Pi entries and future notes. Start the experiment before remote compaction when
 complete local recall is important.
 
-Disabling the experiment removes the four tools and stops future summary-free rollover without
-deleting entries. Existing Pi markers and retained messages remain readable. Re-enable the experiment
-to regain local recall tools.
+Disabling the experiment removes the four tools, appends one deterministic hidden deactivation
+transition for the model, and stops future summary-free rollover without deleting entries. Existing Pi
+markers and retained messages remain readable. Re-enable the experiment to append a new activation
+transition and regain local recall tools.
 
 Local notes and plaintext history are independent of the selected provider and model. Context usage
 always reflects the currently selected model.

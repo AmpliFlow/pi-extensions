@@ -303,6 +303,7 @@ export function createCodexCompactExtension(
 
 		pi.on("session_compact", (event, ctx) => experimental.onCompact(event, ctx));
 		pi.on("session_compact_failed", (event, ctx) => experimental.onCompactFailed(event, ctx));
+		pi.on("turn_start", (_event, ctx) => experimental.onTurnStart(ctx));
 		pi.on("agent_settled", (_event, ctx) => experimental.onAgentSettled(ctx));
 
 		pi.on("session_shutdown", async (_event, ctx) => {

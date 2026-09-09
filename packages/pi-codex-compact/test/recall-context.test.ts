@@ -79,6 +79,39 @@ test("paginates long history reads below the response ceiling", () => {
 	assert.match(first.text, /nextCursor/);
 });
 
+test("chunks multibyte reads by UTF-8 bytes without splitting code points", () => {
+	const entries = branch();
+	const user = entries[0];
+	if (user.type !== "message" || user.message.role !== "user") assert.fail("Expected user entry");
+	user.message.content = [{ type: "text", text: "😀".repeat(9_000) }];
+	const first = recallContext(entries, { source: "history", action: "read", id: "user" });
+	assert.ok(Buffer.byteLength(first.text, "utf8") < 32 * 1024);
+	const cursor = String(first.details.nextCursor);
+	assert.match(cursor, /^\d+$/);
+	assert.doesNotThrow(() =>
+		recallContext(entries, { source: "history", action: "read", id: "user", cursor }),
+	);
+});
+
+test("sanitizes note previews before truncating them", () => {
+	const entries = branch();
+	const note = entries[2];
+	if (note.type !== "custom") assert.fail("Expected note entry");
+	note.data = {
+		version: 1,
+		action: "write",
+		note: "decision",
+		content: `${"\u001b[31m".repeat(100)}meaningful decision`,
+	};
+	const searched = recallContext(entries, {
+		source: "notes",
+		action: "search",
+		query: "MEANINGFUL",
+	});
+	assert.match(searched.text, /meaningful decision/);
+	assert.doesNotMatch(searched.text, /\[31m/);
+});
+
 test("validates action-specific inputs and cursors", () => {
 	assert.throws(
 		() => recallContext(branch(), { source: "history", action: "read" }),

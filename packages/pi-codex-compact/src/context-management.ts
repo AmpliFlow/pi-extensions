@@ -10,21 +10,25 @@ import {
 import { latestCheckpoint } from "./checkpoint.js";
 import {
 	type ContextToolRuntime,
+	EXPERIMENTAL_CONTEXT_TOOL_DESCRIPTIONS,
 	EXPERIMENTAL_CONTEXT_TOOL_NAMES,
 	registerExperimentalContextTools,
 } from "./context-tools.js";
 import {
 	activeExperimentalCompaction,
 	CONTEXT_CONTRACT_MESSAGE_TYPE,
+	CONTEXT_DEACTIVATION_MESSAGE_TYPE,
 	CONTEXT_DETAILS_KIND,
 	CONTEXT_STATE_ENTRY_TYPE,
 	CONTEXT_VERSION,
 	type ContextLineage,
 	compactionKeptMessages,
 	contextContract,
+	contextDeactivation,
 	createExperimentalContextDetails,
 	createInitialContextState,
 	hasContextContract,
+	latestContextMode,
 	loadContextLineage,
 	parseExperimentalContextDetails,
 	projectExperimentalContext,
@@ -34,7 +38,6 @@ import type { CodexCompactSettingsRuntime } from "./settings.js";
 import { terminalText } from "./terminal.js";
 
 const CONTINUATION_MESSAGE_TYPE = "pi-codex-context-continuation";
-const TOOL_NAMES = new Set<string>(EXPERIMENTAL_CONTEXT_TOOL_NAMES);
 
 type PendingRollover = {
 	requestId: string;
@@ -42,6 +45,7 @@ type PendingRollover = {
 	sessionId: string;
 	generation: number;
 	status: "requested" | "compacting" | "completed" | "failed";
+	continuedByPi: boolean;
 	reason?: string;
 	errorMessage?: string;
 };
@@ -60,6 +64,15 @@ function contractMessage(lineage: ContextLineage) {
 			version: CONTEXT_VERSION,
 			currentWindowId: lineage.currentWindowId,
 		},
+	};
+}
+
+function deactivationMessage() {
+	return {
+		customType: CONTEXT_DEACTIVATION_MESSAGE_TYPE,
+		content: contextDeactivation(),
+		display: false,
+		details: { kind: CONTEXT_DETAILS_KIND, version: CONTEXT_VERSION },
 	};
 }
 
@@ -91,6 +104,7 @@ export interface ExperimentalContextManager {
 	): AgentMessage[] | undefined;
 	onCompact(event: SessionCompactEvent, ctx: ExtensionContext): void;
 	onCompactFailed(event: CompactFailedEvent, ctx: ExtensionContext): void;
+	onTurnStart(ctx: ExtensionContext): void;
 	onAgentSettled(ctx: ExtensionContext): void;
 	shutdown(): void;
 }
@@ -105,9 +119,12 @@ export function createExperimentalContextManager(
 	let pending: PendingRollover | undefined;
 	let warned = false;
 	let warnedOpaque = false;
+	let warnedUnavailableTools = false;
+	let toolsAvailable = false;
 	let controller = new AbortController();
 
-	const isEnabled = () => settingsRuntime.get().settings.experimentalContextManagement;
+	const isConfigured = () => settingsRuntime.get().settings.experimentalContextManagement;
+	const isEnabled = () => isConfigured() && toolsAvailable;
 
 	const isOwned = (ctx: ExtensionContext, request?: PendingRollover) =>
 		!controller.signal.aborted &&
@@ -117,13 +134,31 @@ export function createExperimentalContextManager(
 				request.generation === generation &&
 				pending?.requestId === request.requestId));
 
-	const reconcileTools = (enabled: boolean) => {
+	const reconcileTools = (configured: boolean, ctx: ExtensionContext): boolean => {
+		const available = new Map(pi.getAllTools().map((tool) => [tool.name, tool]));
+		const ownedNames = new Set<string>(
+			EXPERIMENTAL_CONTEXT_TOOL_NAMES.filter(
+				(name) => available.get(name)?.description === EXPERIMENTAL_CONTEXT_TOOL_DESCRIPTIONS[name],
+			),
+		);
+		const unavailableNames = EXPERIMENTAL_CONTEXT_TOOL_NAMES.filter(
+			(name) => !ownedNames.has(name),
+		);
+		toolsAvailable = configured && unavailableNames.length === 0;
 		const current = pi.getActiveTools();
-		const withoutExperimental = current.filter((name) => !TOOL_NAMES.has(name));
-		const next = enabled
-			? [...withoutExperimental, ...EXPERIMENTAL_CONTEXT_TOOL_NAMES]
-			: withoutExperimental;
+		const withoutOwned = current.filter((name) => !ownedNames.has(name));
+		const next = toolsAvailable
+			? [...withoutOwned, ...EXPERIMENTAL_CONTEXT_TOOL_NAMES]
+			: withoutOwned;
 		if (!sameNames(current, next)) pi.setActiveTools(next);
+		if (configured && !toolsAvailable && !warnedUnavailableTools && ctx.hasUI) {
+			warnedUnavailableTools = true;
+			ctx.ui.notify(
+				`Experimental context management could not activate because these tool names are unavailable or owned by another extension: ${unavailableNames.join(", ")}. Pi-native compaction remains active.`,
+				"warning",
+			);
+		}
+		return toolsAvailable;
 	};
 
 	const ensureLineage = (ctx: ExtensionContext): ContextLineage => {
@@ -146,13 +181,15 @@ export function createExperimentalContextManager(
 
 	const applySettings = (ctx: ExtensionContext) => {
 		if (!isOwned(ctx)) return;
-		const enabled = isEnabled();
-		reconcileTools(enabled);
+		const branch = ctx.sessionManager.getBranch();
+		const enabled = reconcileTools(isConfigured(), ctx);
 		if (!enabled) {
 			pending = undefined;
+			if (latestContextMode(branch) === "active") {
+				pi.sendMessage(deactivationMessage(), { triggerTurn: false });
+			}
 			return;
 		}
-		const branch = ctx.sessionManager.getBranch();
 		const activeLineage = ensureLineage(ctx);
 		if (
 			!warnedOpaque &&
@@ -166,12 +203,8 @@ export function createExperimentalContextManager(
 				"warning",
 			);
 		}
-		if (
-			!hasContextContract(
-				ctx.sessionManager.getBranch().flatMap(sessionEntryToContextMessages),
-				activeLineage,
-			)
-		) {
+		const messages = branch.flatMap(sessionEntryToContextMessages);
+		if (latestContextMode(branch) !== "active" || !hasContextContract(messages, activeLineage)) {
 			pi.sendMessage(contractMessage(activeLineage), { triggerTurn: false });
 		}
 		warnEnabled(ctx);
@@ -188,6 +221,7 @@ export function createExperimentalContextManager(
 			sessionId: ctx.sessionManager.getSessionId(),
 			generation,
 			status: "requested",
+			continuedByPi: false,
 			...(input.reason ? { reason: input.reason } : {}),
 		};
 		return { requestId: pending.requestId, currentWindowId: activeLineage.currentWindowId };
@@ -254,6 +288,8 @@ export function createExperimentalContextManager(
 			pending = undefined;
 			warned = false;
 			warnedOpaque = false;
+			warnedUnavailableTools = false;
+			toolsAvailable = false;
 			applySettings(ctx);
 		},
 		applySettings,
@@ -297,10 +333,19 @@ export function createExperimentalContextManager(
 		onCompact(event, ctx) {
 			if (!isOwned(ctx)) return;
 			const details = parseExperimentalContextDetails(event.compactionEntry.details);
-			if (!details) return;
-			lineage = details;
+			if (details) lineage = details;
 			const request = pending;
-			if (request && details.requestId === request.requestId) request.status = "completed";
+			if (request?.status !== "compacting" || !isOwned(ctx, request)) return;
+			if (
+				!details ||
+				details.requestId !== request.requestId ||
+				event.compactionEntry.summary !== contextContract(details)
+			) {
+				request.status = "failed";
+				request.errorMessage = "Compaction completed without the requested context marker.";
+				return;
+			}
+			request.status = "completed";
 		},
 		onCompactFailed(event, ctx) {
 			const request = pending;
@@ -309,11 +354,18 @@ export function createExperimentalContextManager(
 			request.errorMessage =
 				event.errorMessage ?? (event.aborted ? "Compaction was cancelled." : "Compaction failed.");
 		},
+		onTurnStart(ctx) {
+			const request = pending;
+			if (request?.status === "completed" && isOwned(ctx, request)) {
+				request.continuedByPi = true;
+			}
+		},
 		onAgentSettled(ctx) {
 			const request = pending;
 			if (!request || !isOwned(ctx, request)) return;
 			if (request.status === "completed") {
-				continueAfterRollover(ctx, request);
+				if (request.continuedByPi) pending = undefined;
+				else continueAfterRollover(ctx, request);
 				return;
 			}
 			if (request.status === "failed") {
@@ -349,6 +401,8 @@ export function createExperimentalContextManager(
 			pending = undefined;
 			warned = false;
 			warnedOpaque = false;
+			warnedUnavailableTools = false;
+			toolsAvailable = false;
 		},
 	};
 }

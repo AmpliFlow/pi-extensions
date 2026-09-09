@@ -13,6 +13,17 @@ export const EXPERIMENTAL_CONTEXT_TOOL_NAMES = [
 	"update_notes",
 ] as const;
 
+export const EXPERIMENTAL_CONTEXT_TOOL_DESCRIPTIONS = {
+	start_new_context:
+		"Request a fresh summary-free context window after the current agent run settles. Save important durable information with update_notes first. This tool changes context state but does not read or write memory itself.",
+	get_context_remaining:
+		"Inspect the active model context window and estimated remaining tokens without changing context state.",
+	recall_context:
+		"Read-only access to branch-local conversation history or context notes. List items, read one stable item ID, or search text. Use the returned cursor to continue bounded results.",
+	update_notes:
+		"Write or append one branch-local context note. This tool changes notes only; use recall_context with source notes to read them.",
+} as const satisfies Record<(typeof EXPERIMENTAL_CONTEXT_TOOL_NAMES)[number], string>;
+
 const RECALL_SOURCES = ["history", "notes"] as const;
 const RECALL_ACTIONS = ["list", "read", "search"] as const;
 const NOTE_ACTIONS = ["write", "append"] as const;
@@ -51,8 +62,7 @@ export function registerExperimentalContextTools(
 	pi.registerTool({
 		name: "start_new_context",
 		label: "Start New Context",
-		description:
-			"Request a fresh summary-free context window after the current agent run settles. Save important durable information with update_notes first. This tool changes context state but does not read or write memory itself.",
+		description: EXPERIMENTAL_CONTEXT_TOOL_DESCRIPTIONS.start_new_context,
 		parameters: Type.Object(
 			{
 				reason: Type.Optional(
@@ -92,8 +102,7 @@ export function registerExperimentalContextTools(
 	pi.registerTool({
 		name: "get_context_remaining",
 		label: "Get Context Remaining",
-		description:
-			"Inspect the active model context window and estimated remaining tokens without changing context state.",
+		description: EXPERIMENTAL_CONTEXT_TOOL_DESCRIPTIONS.get_context_remaining,
 		parameters: Type.Object({}, { additionalProperties: false }),
 		async execute(_toolCallId, _params, signal, _onUpdate, ctx) {
 			requireEnabled(runtime);
@@ -122,8 +131,7 @@ export function registerExperimentalContextTools(
 	pi.registerTool({
 		name: "recall_context",
 		label: "Recall Context",
-		description:
-			"Read-only access to branch-local conversation history or context notes. List items, read one stable item ID, or search text. Use the returned cursor to continue bounded results.",
+		description: EXPERIMENTAL_CONTEXT_TOOL_DESCRIPTIONS.recall_context,
 		parameters: Type.Object(
 			{
 				source: StringEnum(RECALL_SOURCES, {
@@ -159,8 +167,7 @@ export function registerExperimentalContextTools(
 	pi.registerTool({
 		name: "update_notes",
 		label: "Update Context Notes",
-		description:
-			"Write or append one branch-local context note. This tool changes notes only; use recall_context with source notes to read them.",
+		description: EXPERIMENTAL_CONTEXT_TOOL_DESCRIPTIONS.update_notes,
 		parameters: Type.Object(
 			{
 				action: StringEnum(NOTE_ACTIONS, {

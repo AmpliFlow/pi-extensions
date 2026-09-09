@@ -13,6 +13,7 @@ import { fingerprintMessage } from "./checkpoint.js";
 
 export const CONTEXT_STATE_ENTRY_TYPE = "pi-codex-context-state";
 export const CONTEXT_CONTRACT_MESSAGE_TYPE = "pi-codex-context-contract";
+export const CONTEXT_DEACTIVATION_MESSAGE_TYPE = "pi-codex-context-deactivation";
 export const CONTEXT_DETAILS_KIND = "pi-codex-context-window";
 export const CONTEXT_VERSION = 1;
 const MAX_DETAILS_BYTES = 8 * 1024 * 1024;
@@ -167,6 +168,36 @@ export function contextContract(lineage: ContextLineage): string {
 	].join("\n");
 }
 
+export function contextDeactivation(): string {
+	return [
+		"Experimental Pi-native context management is no longer active.",
+		"Its context tools are unavailable. Continue with Pi's active compaction strategy and do not call start_new_context, get_context_remaining, recall_context, or update_notes.",
+	].join("\n");
+}
+
+export function latestContextMode(
+	entries: readonly SessionEntry[],
+): "active" | "inactive" | undefined {
+	let mode: "active" | "inactive" | undefined;
+	for (const entry of entries) {
+		if (entry.type === "compaction") {
+			const details = parseExperimentalContextDetails(entry.details);
+			if (details && entry.summary === contextContract(details)) mode = "active";
+		}
+		for (const message of sessionEntryToContextMessages(entry)) {
+			if (message.role !== "custom") continue;
+			if (message.customType === CONTEXT_CONTRACT_MESSAGE_TYPE) mode = "active";
+			if (
+				message.customType === CONTEXT_DEACTIVATION_MESSAGE_TYPE &&
+				message.content === contextDeactivation()
+			) {
+				mode = "inactive";
+			}
+		}
+	}
+	return mode;
+}
+
 export function createContextContractMessage(lineage: ContextLineage): AgentMessage {
 	return {
 		role: "custom",
@@ -256,6 +287,7 @@ function isOlderCompactionSummary(message: AgentMessage, timestamp: number): boo
 	return (
 		message.role === "compactionSummary" &&
 		Number.isFinite(message.timestamp) &&
+		Number.isFinite(timestamp) &&
 		message.timestamp < timestamp
 	);
 }
