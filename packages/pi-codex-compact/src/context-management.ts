@@ -45,7 +45,7 @@ type PendingRollover = {
 	sessionId: string;
 	generation: number;
 	status: "requested" | "compacting" | "completed" | "failed";
-	continuedByPi: boolean;
+	turnStartedAfterRequest: boolean;
 	reason?: string;
 	errorMessage?: string;
 };
@@ -221,7 +221,7 @@ export function createExperimentalContextManager(
 			sessionId: ctx.sessionManager.getSessionId(),
 			generation,
 			status: "requested",
-			continuedByPi: false,
+			turnStartedAfterRequest: false,
 			...(input.reason ? { reason: input.reason } : {}),
 		};
 		return { requestId: pending.requestId, currentWindowId: activeLineage.currentWindowId };
@@ -273,7 +273,11 @@ export function createExperimentalContextManager(
 					failed: true,
 				},
 			},
-			ctx.isIdle() ? { triggerTurn: true } : { triggerTurn: true, deliverAs: "followUp" },
+			request.turnStartedAfterRequest
+				? { triggerTurn: false }
+				: ctx.isIdle()
+					? { triggerTurn: true }
+					: { triggerTurn: true, deliverAs: "followUp" },
 		);
 	};
 
@@ -356,15 +360,13 @@ export function createExperimentalContextManager(
 		},
 		onTurnStart(ctx) {
 			const request = pending;
-			if (request?.status === "completed" && isOwned(ctx, request)) {
-				request.continuedByPi = true;
-			}
+			if (request && isOwned(ctx, request)) request.turnStartedAfterRequest = true;
 		},
 		onAgentSettled(ctx) {
 			const request = pending;
 			if (!request || !isOwned(ctx, request)) return;
 			if (request.status === "completed") {
-				if (request.continuedByPi) pending = undefined;
+				if (request.turnStartedAfterRequest) pending = undefined;
 				else continueAfterRollover(ctx, request);
 				return;
 			}
@@ -388,7 +390,8 @@ export function createExperimentalContextManager(
 					}
 					lineage = details;
 					request.status = "completed";
-					continueAfterRollover(ctx, request);
+					if (request.turnStartedAfterRequest) pending = undefined;
+					else continueAfterRollover(ctx, request);
 				},
 				onError: (error) => failRollover(ctx, request, error.message),
 			});

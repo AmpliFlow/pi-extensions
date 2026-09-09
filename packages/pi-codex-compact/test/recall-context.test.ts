@@ -69,6 +69,29 @@ test("reads and searches notes separately from history", () => {
 	assert.match(searched.text, /decision/);
 });
 
+test("ignores note identifiers that would change at the display boundary", () => {
+	const entries = branch();
+	entries.push({
+		type: "custom",
+		customType: NOTES_ENTRY_TYPE,
+		data: {
+			version: 1,
+			action: "write",
+			note: "unsafe\u001b[31m",
+			content: "hidden",
+		},
+		id: "unsafe-note",
+		parentId: entries.at(-1)?.id ?? null,
+		timestamp: "2026-01-01T00:00:03.000Z",
+	});
+	const listed = recallContext(entries, { source: "notes", action: "list" });
+	assert.doesNotMatch(listed.text, /unsafe/);
+	assert.throws(
+		() => recallContext(entries, { source: "notes", action: "read", id: "unsafe\u001b[31m" }),
+		/not found/,
+	);
+});
+
 test("paginates long history reads below the response ceiling", () => {
 	const entries = branch();
 	const user = entries[0];

@@ -42,6 +42,13 @@ test("ignores malformed stored mutations and rejects invalid new mutations", () 
 		() => createNoteMutation([], { action: "write", note: " spaced ", content: "x" }),
 		/Invalid note mutation/,
 	);
+	for (const note of ["decision\u001b[31m", "line\nbreak", "c1\u009bcontrol"]) {
+		assert.equal(parseNoteMutation({ version: 1, action: "write", note, content: "x" }), undefined);
+		assert.throws(
+			() => createNoteMutation([], { action: "write", note, content: "x" }),
+			/without terminal controls/,
+		);
+	}
 	assert.throws(
 		() =>
 			createNoteMutation([], {

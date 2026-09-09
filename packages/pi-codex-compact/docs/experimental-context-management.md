@@ -57,7 +57,9 @@ Request one fresh context window after the current agent run settles:
 ```
 
 The tool schedules one rollover and asks Pi to stop after the tool batch. Sibling tool calls may still
-finish before the agent becomes idle. If Pi already starts automatic compaction, that compaction
+finish before the agent becomes idle. Pi stops only when every result in a mixed batch requests
+termination; if another model turn runs first, the extension still compacts after settlement but does
+not send a duplicate hidden continuation. If Pi already starts automatic compaction, that compaction
 consumes the request; otherwise the extension calls `ctx.compact()` at `agent_settled`.
 
 After success, one hidden next-turn message asks the model to continue. Failure keeps the old context
@@ -182,7 +184,7 @@ Limits are fixed to keep session growth and tool responses bounded:
 
 | Boundary | Limit |
 | --- | ---: |
-| Note name | 128 characters |
+| Note name | 128 characters with no terminal controls |
 | One note mutation | 16 KiB UTF-8 |
 | Active notes | 64 names and 256 KiB total |
 | Recall query | 512 characters |

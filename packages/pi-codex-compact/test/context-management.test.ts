@@ -535,6 +535,69 @@ test("a post-compaction Pi turn suppresses the fallback continuation", async () 
 	);
 });
 
+test.each(["success", "failure"] as const)(
+	"a turn started after a rollover request suppresses the %s fallback continuation",
+	async (outcome) => {
+		const current = setup();
+		await start(current);
+		await tool(current, "start_new_context").execute(
+			"start",
+			{},
+			undefined,
+			undefined,
+			current.current.ctx,
+		);
+		await current.mock.events.get("turn_start")?.[0](
+			{ type: "turn_start", turnIndex: 1, timestamp: Date.now() },
+			current.current.ctx,
+		);
+		await current.mock.events.get("agent_settled")?.[0](
+			{ type: "agent_settled" },
+			current.current.ctx,
+		);
+		assert.ok(current.compactOptions);
+		if (outcome === "failure") {
+			current.compactOptions.onError?.(new Error("mixed batch compaction failed"));
+		} else {
+			const before = current.mock.events.get("session_before_compact")?.[0];
+			assert.ok(before);
+			const result = (await before(
+				{
+					type: "session_before_compact",
+					preparation: {
+						firstKeptEntryId: "user",
+						messagesToSummarize: [],
+						turnPrefixMessages: [],
+						isSplitTurn: false,
+						tokensBefore: 90,
+						fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+						settings: { enabled: true, reserveTokens: 10, keepRecentTokens: 10 },
+					},
+					branchEntries: current.entries,
+					reason: "manual",
+					willRetry: false,
+					signal: new AbortController().signal,
+				},
+				current.current.ctx,
+			)) as { compaction: { details: unknown } };
+			current.compactOptions.onComplete?.(result.compaction);
+		}
+		assert.equal(
+			current.mock.sentMessages.filter(
+				(item) => (item.options as { triggerTurn?: boolean } | undefined)?.triggerTurn,
+			).length,
+			0,
+		);
+		await tool(current, "start_new_context").execute(
+			"retry",
+			{},
+			undefined,
+			undefined,
+			current.current.ctx,
+		);
+	},
+);
+
 test.each(["missing", "mismatched"] as const)(
 	"a replaced compaction result with %s details fails and releases the pending rollover",
 	async (replacement) => {

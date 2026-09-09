@@ -1,12 +1,17 @@
 import assert from "node:assert/strict";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { CompactionEntry, SessionEntry } from "@earendil-works/pi-coding-agent";
+import type {
+	CompactionEntry,
+	SessionBeforeCompactEvent,
+	SessionEntry,
+} from "@earendil-works/pi-coding-agent";
 import { test } from "vitest";
 import {
 	activeExperimentalCompaction,
 	CONTEXT_DETAILS_KIND,
 	CONTEXT_STATE_ENTRY_TYPE,
 	CONTEXT_VERSION,
+	compactionKeptMessages,
 	contextContract,
 	createExperimentalContextDetails,
 	createInitialContextState,
@@ -123,6 +128,87 @@ test("projects only an exactly fingerprinted retained prefix", () => {
 	const secondProjection = projectExperimentalContext([summary, kept, later, next], entry, details);
 	assert.deepEqual(secondProjection?.slice(0, firstProjection?.length), firstProjection);
 });
+
+test.each(["error", "length"] as const)(
+	"excludes a retried overflow %s response from retained fingerprints",
+	(stopReason) => {
+		const user = message("kept", 1);
+		const failed: AgentMessage = {
+			role: "assistant",
+			content: [],
+			api: "openai-responses",
+			provider: "test",
+			model: "test",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason,
+			timestamp: 2,
+		};
+		const entries: SessionEntry[] = [
+			{
+				type: "message",
+				id: "user",
+				parentId: null,
+				timestamp: "2026-01-01T00:00:01.000Z",
+				message: user,
+			},
+			{
+				type: "message",
+				id: "failed",
+				parentId: "user",
+				timestamp: "2026-01-01T00:00:02.000Z",
+				message: failed,
+			},
+		];
+		const event: SessionBeforeCompactEvent = {
+			type: "session_before_compact",
+			preparation: {
+				firstKeptEntryId: "user",
+				messagesToSummarize: [],
+				turnPrefixMessages: [],
+				isSplitTurn: false,
+				tokensBefore: 100,
+				fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+				settings: { enabled: true, reserveTokens: 10, keepRecentTokens: 10 },
+			},
+			branchEntries: entries,
+			reason: "overflow",
+			willRetry: true,
+			signal: new AbortController().signal,
+		};
+		const kept = compactionKeptMessages(event);
+		assert.deepEqual(kept, [user]);
+		assert.deepEqual(compactionKeptMessages({ ...event, willRetry: false }), [user, failed]);
+
+		const details = createExperimentalContextDetails({
+			lineage: createInitialContextState(first),
+			keptMessages: kept,
+			reason: "overflow",
+			windowId: second,
+		});
+		const summary: AgentMessage = {
+			role: "compactionSummary",
+			summary: contextContract(details),
+			tokensBefore: 100,
+			timestamp: 3,
+		};
+		const entry = {
+			type: "compaction",
+			summary: contextContract(details),
+		} as CompactionEntry<typeof details>;
+		const next = message("retried response", 4);
+		assert.deepEqual(projectExperimentalContext([summary, user, next], entry, details), [
+			summary,
+			next,
+		]);
+	},
+);
 
 test("fails closed when the active compaction summary timestamp is non-finite", () => {
 	const kept = message("kept", 2);

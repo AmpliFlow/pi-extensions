@@ -255,7 +255,16 @@ export function compactionKeptMessages(event: SessionBeforeCompactEvent): AgentM
 	if (keptIndex < 0) {
 		throw new Error("Pi compaction cut point is not present in the active context");
 	}
-	return contextEntries.slice(keptIndex).flatMap(sessionEntryToContextMessages);
+	const keptMessages = contextEntries.slice(keptIndex).flatMap(sessionEntryToContextMessages);
+	const lastMessage = keptMessages.at(-1);
+	if (
+		event.willRetry &&
+		lastMessage?.role === "assistant" &&
+		(lastMessage.stopReason === "error" || lastMessage.stopReason === "length")
+	) {
+		return keptMessages.slice(0, -1);
+	}
+	return keptMessages;
 }
 
 export function createExperimentalContextDetails(input: {

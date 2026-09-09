@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 
 export const NOTES_ENTRY_TYPE = "pi-codex-context-note";
@@ -34,7 +35,12 @@ function validNoteName(value: unknown): value is string {
 		typeof value === "string" &&
 		value.length > 0 &&
 		value.length <= MAX_NOTE_NAME_LENGTH &&
-		value.trim() === value
+		value.trim() === value &&
+		stripVTControlCharacters(value) === value &&
+		!Array.from(value).some((character) => {
+			const codePoint = character.codePointAt(0) ?? 0;
+			return codePoint < 32 || (codePoint >= 127 && codePoint <= 159);
+		})
 	);
 }
 
@@ -89,7 +95,7 @@ export function createNoteMutation(
 	const mutation = parseNoteMutation({ version: NOTES_VERSION, ...input });
 	if (!mutation) {
 		throw new Error(
-			`Invalid note mutation; names must be 1-${MAX_NOTE_NAME_LENGTH} characters and content must be 1-${MAX_NOTE_MUTATION_BYTES} UTF-8 bytes`,
+			`Invalid note mutation; names must be 1-${MAX_NOTE_NAME_LENGTH} characters without terminal controls and content must be 1-${MAX_NOTE_MUTATION_BYTES} UTF-8 bytes`,
 		);
 	}
 	const notes = loadNotes(entries);
