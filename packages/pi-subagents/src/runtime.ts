@@ -339,6 +339,31 @@ export class SubagentRuntime {
 		return this.waitResult(job, outcome === "timeout");
 	}
 
+	async completion(jobId: string): Promise<{
+		jobId: string;
+		state: Extract<
+			SubagentJobState,
+			"completed" | "partial" | "failed" | "timed_out" | "cancelled"
+		>;
+		result?: string;
+		error?: string;
+		limitations?: string[];
+	}> {
+		const job = this.requireJob(jobId);
+		await job.terminal;
+		const { timedOut: _timedOut, ...completion } = this.waitResult(job, false);
+		return completion as {
+			jobId: string;
+			state: Extract<
+				SubagentJobState,
+				"completed" | "partial" | "failed" | "timed_out" | "cancelled"
+			>;
+			result?: string;
+			error?: string;
+			limitations?: string[];
+		};
+	}
+
 	async shutdown(): Promise<void> {
 		if (!this.sessionActive) return;
 		this.deliveryEnabled = false;

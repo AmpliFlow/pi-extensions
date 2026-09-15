@@ -257,6 +257,123 @@ test("spawns jobs with default and explicit tools and thinking levels", async ()
 	]);
 });
 
+test("serves extension-neutral background-job requests through the shared event bus", async () => {
+	let release!: () => void;
+	const pending = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	const requests: ChildRequest[] = [];
+	const { mock, context } = await setup({
+		runChild: async (request) => {
+			requests.push(request);
+			await pending;
+			return completed("protocol result");
+		},
+	});
+	let response: { ok: boolean; jobId?: string; error?: string } | undefined;
+	let complete!: (value: unknown) => void;
+	const completion = new Promise((resolve) => {
+		complete = resolve;
+	});
+	let claimed = false;
+
+	mock.pi.events.emit("pi:background-job:v1:start", {
+		version: 1,
+		requestId: "request-1",
+		task: "Handle one checklist",
+		cwd: context.ctx.cwd,
+		tools: ["read", "bash"],
+		claim() {
+			if (claimed) return false;
+			claimed = true;
+			return true;
+		},
+		respond(value: typeof response) {
+			response = value;
+		},
+		complete,
+	});
+
+	assert.equal(response?.ok, true);
+	assert.match(response?.jobId ?? "", /^job_/u);
+	await Promise.resolve();
+	assert.deepEqual(
+		requests.map(({ task, tools }) => ({ task, tools })),
+		[{ task: "Handle one checklist", tools: ["read", "bash"] }],
+	);
+	release();
+	assert.deepEqual(await completion, {
+		jobId: response?.jobId,
+		state: "completed",
+		result: "protocol result",
+	});
+});
+
+test("cancels a background job when its consumer aborts", async () => {
+	const { mock, context } = await setup({
+		runChild: async (request) => {
+			await new Promise<void>((resolve) =>
+				request.signal.addEventListener("abort", () => resolve(), { once: true }),
+			);
+			return cancelled();
+		},
+	});
+	const controller = new AbortController();
+	let claimed = false;
+	let complete!: (value: unknown) => void;
+	const completion = new Promise((resolve) => {
+		complete = resolve;
+	});
+	let jobId = "";
+	mock.pi.events.emit("pi:background-job:v1:start", {
+		version: 1,
+		requestId: "request-cancel",
+		task: "Wait until cancelled",
+		cwd: context.ctx.cwd,
+		signal: controller.signal,
+		claim() {
+			if (claimed) return false;
+			claimed = true;
+			return true;
+		},
+		respond(response: { ok: boolean; jobId?: string }) {
+			jobId = response.jobId ?? "";
+		},
+		complete,
+	});
+	controller.abort();
+	assert.deepEqual(await completion, {
+		jobId,
+		state: "cancelled",
+		error: "Subagent execution was cancelled.",
+	});
+});
+
+test("rejects background-job requests for a different active cwd", async () => {
+	const { mock } = await setup();
+	let response: { ok: boolean; error?: string } | undefined;
+	let claimed = false;
+	mock.pi.events.emit("pi:background-job:v1:start", {
+		version: 1,
+		requestId: "request-wrong-cwd",
+		task: "Do not start",
+		cwd: "/different/project",
+		claim() {
+			if (claimed) return false;
+			claimed = true;
+			return true;
+		},
+		respond(value: typeof response) {
+			response = value;
+		},
+		complete() {},
+	});
+	assert.deepEqual(response, {
+		ok: false,
+		error: "Background-job cwd does not match the active Pi session.",
+	});
+});
+
 test("shows active job timing, timeout, and selected tools above the editor", async () => {
 	let refreshWidget: (() => void) | undefined;
 	const fakeTimer = { unref() {} } as NodeJS.Timeout;
