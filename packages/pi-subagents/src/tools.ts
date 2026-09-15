@@ -142,24 +142,7 @@ export function registerSubagentTools(
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			throwIfAborted(signal, "Subagent spawn was cancelled");
 			assertNotNested();
-			const task = validateTask(params.task, "subagent_spawn");
-			const tools = resolveTools(params.tools);
-			const model = resolveChildModel(ctx);
-			const thinkingLevel = resolveThinkingLevel(
-				params.thinkingLevel ?? ctx.thinkingLevel ?? pi.getThinkingLevel(),
-			);
-			resolveTimeoutMs(params.timeout);
-			return toolResult(
-				runtime.start({
-					task,
-					tools,
-					model,
-					thinkingLevel,
-					cwd: ctx.cwd,
-					timeout: params.timeout,
-					projectTrusted: ctx.isProjectTrusted(),
-				}),
-			);
+			return toolResult(runtime.start(resolveStartJobInput(pi, params, ctx)));
 		},
 	});
 
@@ -281,6 +264,31 @@ function deliverMessage(pi: ExtensionAPI, message: BrokerInboundMessage): void {
 		},
 		{ deliverAs: "steer", triggerTurn: true },
 	);
+}
+
+export function resolveStartJobInput(
+	pi: ExtensionAPI,
+	params: { task: string; tools?: unknown; thinkingLevel?: unknown; timeout?: number },
+	ctx: ExtensionContext,
+	caller = "subagent_spawn",
+) {
+	assertNotNested();
+	const task = validateTask(params.task, caller);
+	const tools = resolveTools(params.tools);
+	const model = resolveChildModel(ctx);
+	const thinkingLevel = resolveThinkingLevel(
+		params.thinkingLevel ?? ctx.thinkingLevel ?? pi.getThinkingLevel(),
+	);
+	resolveTimeoutMs(params.timeout);
+	return {
+		task,
+		tools,
+		model,
+		thinkingLevel,
+		cwd: ctx.cwd,
+		...(params.timeout !== undefined ? { timeout: params.timeout } : {}),
+		projectTrusted: ctx.isProjectTrusted(),
+	};
 }
 
 function validateTask(value: string, toolName: string): string {

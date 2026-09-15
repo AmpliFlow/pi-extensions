@@ -14,15 +14,19 @@ Pi Subagents runs Pi jobs in separate child processes and supports authenticated
 - Gives every child `subagent_wait` for an answer to a child-originated request.
 - Lets the main agent question a queued or running job through Pi RPC steering without retaining the child after completion.
 - Publishes one asynchronous terminal completion and shows active-job progress above the editor.
+- Lets trusted Pi extensions reuse the same runtime through a versioned background-job event protocol.
 - Exposes privacy-filtered metadata without task text, output, prompts, selected tools, or broker credentials.
 - Cancels session-owned work and closes the broker during replacement, reload, or shutdown.
 
 ## 📦 Install
 
-The version 3 runtime documented here is not yet published to npm.
-The npm package still contains the legacy 2.x runtime and does not provide the tools below.
+Install from npm:
 
-Install the repository source as one Pi package:
+```bash
+pi install npm:@narumitw/pi-subagents
+```
+
+Or install the repository source as one Pi package:
 
 ```bash
 pi install git:github.com/narumiruna/pi-extensions
@@ -110,6 +114,12 @@ The terminal states are `completed`, `partial`, `failed`, `timed_out`, and `canc
 `subagent_inspect` never returns complete task text, child output, prompts, selected tools, context, credentials, environment variables, requests, responses, or secrets.
 
 See [`docs/tools.md`](./docs/tools.md) for the concise schema reference.
+
+## 🔌 Extension background jobs
+
+Trusted Pi extensions can start work through `pi:background-job:v1:start`. Pi Subagents handles the job with the same runtime, validation, queue, model inheritance, cancellation, and output limits as `subagent_spawn`. This avoids parallel subprocess implementations and keeps one owner for child lifecycle behavior.
+
+See [`docs/background-job-protocol.md`](./docs/background-job-protocol.md) for the event contract and trust boundary.
 
 ## ⚙️ Job configuration
 
