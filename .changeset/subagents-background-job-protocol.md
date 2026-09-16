@@ -1,5 +1,5 @@
 ---
-"@narumitw/pi-subagents": minor
+"@narumitw/pi-subagents": major
 ---
 
-Expose the existing subagent runtime to trusted Pi extensions through a versioned background-job event protocol.
+Replace the bounded background-job runtime with named interactive and background agents based on edxeth/pi-subagents. Add visible asynchronous multiplexer sessions, resume and kill controls, bundled agent defaults, and a fixed-purpose launch bridge for af-checklist-watch.
