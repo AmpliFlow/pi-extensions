@@ -65,6 +65,8 @@ export interface SubagentLaunchContext {
 	parentThinking?: string;
 	/** Trusted integration-only defaults. Model-facing tools never set this. */
 	agentDefaultsOverride?: AgentDefaults;
+	/** Trusted integration-only Zellij placement group. Model-facing tools never set this. */
+	zellijPlacementGroupKey?: string;
 }
 
 export interface PreparedSubagentLaunch {

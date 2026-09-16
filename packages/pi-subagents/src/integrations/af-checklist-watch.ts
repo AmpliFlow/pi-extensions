@@ -87,7 +87,7 @@ const CHECKLIST_AGENT_DEFAULTS: AgentDefaults = {
 	timeout: 900,
 	onTimeout: "block-resume",
 	parentClosePolicy: "terminate",
-	env: "PI_SUBAGENT_ZELLIJ_PLACEMENT=dwindle",
+	env: "PI_SUBAGENT_ZELLIJ_PLACEMENT=right-stack",
 };
 
 const defaultRuntime: AfChecklistSubagentRuntime = {
@@ -182,6 +182,7 @@ function launchContext(
 		parentModelRef: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
 		parentThinking: pi.getThinkingLevel() as string,
 		agentDefaultsOverride: CHECKLIST_AGENT_DEFAULTS,
+		zellijPlacementGroupKey: `af-checklist-watch:${ctx.sessionManager.getSessionId()}`,
 	};
 }
 

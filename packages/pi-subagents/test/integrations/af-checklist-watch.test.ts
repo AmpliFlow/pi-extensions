@@ -143,6 +143,7 @@ describe("af-checklist-watch async subagent provider", () => {
 			autoExit: true,
 			parentModelRef: "provider/model",
 			parentThinking: "high",
+			zellijPlacementGroupKey: "af-checklist-watch:parent",
 			agentDefaultsOverride: {
 				mode: "interactive",
 				autoExit: true,
@@ -156,7 +157,7 @@ describe("af-checklist-watch async subagent provider", () => {
 				spawning: false,
 				timeout: 900,
 				parentClosePolicy: "terminate",
-				env: "PI_SUBAGENT_ZELLIJ_PLACEMENT=dwindle",
+				env: "PI_SUBAGENT_ZELLIJ_PLACEMENT=right-stack",
 			},
 		});
 

@@ -98,7 +98,9 @@ export async function coordinateSubagentLaunch(
 		? {
 				zellijPlacementPolicy,
 				zellijPlacementGroupKey:
-					prepared.sessionFile ?? `session:${ctx.sessionManager.getSessionId()}`,
+					ctx.zellijPlacementGroupKey ??
+					prepared.sessionFile ??
+					`session:${ctx.sessionManager.getSessionId()}`,
 			}
 		: undefined;
 	const launchMetadata = buildPersistedSubagentLaunchMetadata(

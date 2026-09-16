@@ -28,7 +28,7 @@ The provider owns the launch policy:
 - standalone temporary child session
 - 900-second timeout
 - termination on parent close
-- dwindle placement in Zellij
+- one right-side stack of split panes in Zellij
 - mandatory JSONL audit logging for finalized messages, tool activity, direct operator input, and lifecycle events
 - a trusted unattended-work policy: a finalized human approval authorizes its exact immediately downstream action, while unfinished human approval steps wait through AmpliFlow without requiring terminal attention
 
