@@ -12,6 +12,8 @@ export interface PollResult {
 	completionReason?: "context-pressure" | "context-pressure-failure";
 	ping?: { name: string; message: string };
 	errorMessage?: string;
+	/** Bounded final assistant text carried by no-session children. */
+	summary?: string;
 }
 
 /**
@@ -77,7 +79,13 @@ function interpretExitSidecar(data: any): PollResult {
 				: "Subagent exited with stopReason=error (no errorMessage in sidecar).";
 		return withUsage({ reason: "error" as const, exitCode: 1, errorMessage });
 	}
-	return withUsage({ reason: "done" as const, exitCode: 0 });
+	const summary =
+		typeof data?.summary === "string" && data.summary.trim() !== "" ? data.summary : undefined;
+	return withUsage({
+		reason: "done" as const,
+		exitCode: 0,
+		...(summary ? { summary } : {}),
+	});
 }
 
 export const __pollForExitTest__ = { interpretExitSidecar };

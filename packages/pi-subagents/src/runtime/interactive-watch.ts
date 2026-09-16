@@ -419,6 +419,9 @@ function getSummary(
 	running: RunningSubagent,
 	pollResult: PollResult,
 ): { summary: string; summarySource: SubagentSummarySource } {
+	if (pollResult.summary) {
+		return { summary: pollResult.summary, summarySource: "subagent" };
+	}
 	if (
 		(!running.noSession || running.timeoutWarnThreshold !== undefined) &&
 		existsSync(running.sessionFile)

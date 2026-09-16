@@ -28,6 +28,33 @@ import { SUBAGENT_DONE_TOOL_NAME, SUBAGENT_LAUNCH_TOOL_NAMES } from "./tool-name
 
 const TOOL_BOUNDARY_RECOVERY_NUDGE = "continue";
 const MAX_CONSECUTIVE_TOOL_BOUNDARY_ENDS = 3;
+const MAX_EXIT_SUMMARY_CHARS = 16_384;
+
+export function findLatestAssistantText(messages: unknown[] | undefined): string | undefined {
+	if (!messages) return undefined;
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index] as { role?: unknown; content?: unknown };
+		if (message?.role !== "assistant") continue;
+		const text =
+			typeof message.content === "string"
+				? message.content
+				: Array.isArray(message.content)
+					? message.content
+							.filter(
+								(block: unknown): block is { type: "text"; text: string } =>
+									typeof block === "object" &&
+									block !== null &&
+									(block as { type?: unknown }).type === "text" &&
+									typeof (block as { text?: unknown }).text === "string",
+							)
+							.map((block) => block.text)
+							.join("\n")
+					: "";
+		const trimmed = text.trim();
+		return trimmed ? trimmed.slice(0, MAX_EXIT_SUMMARY_CHARS) : undefined;
+	}
+	return undefined;
+}
 export function isMissingOptionalDependencyForTest(error: unknown, id: string): boolean {
 	return isMissingOptionalDependency(error, id);
 }
@@ -516,7 +543,10 @@ export default function (pi: ExtensionAPI) {
 			providerErrorRecovery.cancelPendingRecovery(true);
 			cancelPendingPiRecovery();
 			if (autoExitDisabledByOperator) return;
-			writeExitSignal({ type: "done", outputTokens }, { supersede: true });
+			writeExitSignal(
+				{ type: "done", outputTokens, summary: findLatestAssistantText(messages) },
+				{ supersede: true },
+			);
 			requestShutdown(ctx);
 		});
 
