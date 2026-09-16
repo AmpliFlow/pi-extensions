@@ -75,65 +75,6 @@ async function readPanes(runtime: ZellijTarget): Promise<ZellijPaneSnapshot[]> {
 	throw lastError;
 }
 
-async function readClientSurfaces(runtime: ZellijTarget): Promise<string[]> {
-	return (await action(runtime, ["list-clients"]))
-		.split("\n")
-		.map((line) => line.trim())
-		.filter(Boolean)
-		.slice(1)
-		.map((line) => line.split(/\s+/)[1])
-		.map((pane) => pane?.match(/(?:terminal_)?(\d+)/)?.[1])
-		.filter((paneId): paneId is string => !!paneId)
-		.map((paneId) => `pane:${paneId}`);
-}
-
-async function requireSingleClient(runtime: ZellijTarget): Promise<string> {
-	const clients = await readClientSurfaces(runtime);
-	if (clients.length !== 1) {
-		throw new Error(
-			"Zellij stacked or tab placement requires exactly one attached client " +
-				`to preserve focus; found ${clients.length}. Use floating placement or detach extra clients.`,
-		);
-	}
-	return clients[0];
-}
-
-async function focusPane(runtime: ZellijTarget, surface: string): Promise<void> {
-	try {
-		await action(runtime, ["focus-pane-id", `terminal_${surfacePaneId(surface)}`]);
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		if (!/is already focused/i.test(message)) throw error;
-	}
-}
-
-async function restoreFocus(
-	runtime: ZellijTarget,
-	surface: string,
-	tabPosition?: number,
-): Promise<void> {
-	try {
-		await action(runtime, ["focus-previous-pane"]);
-	} catch {}
-	try {
-		const position =
-			tabPosition ??
-			(await readPanes(runtime)).find(
-				(candidate) => !candidate.is_plugin && candidate.id === surfacePaneId(surface),
-			)?.tab_position;
-		if (typeof position === "number") {
-			await action(runtime, ["go-to-tab", String(position + 1)]);
-		}
-	} catch {}
-	for (let attempt = 0; attempt < 4; attempt++) {
-		try {
-			await focusPane(runtime, surface);
-			if ((await readClientSurfaces(runtime))[0] === surface) return;
-		} catch {}
-		await delay(25);
-	}
-}
-
 async function waitForPane(
 	runtime: ZellijTarget,
 	surface: string,
@@ -193,34 +134,30 @@ async function createStacked(
 	anchorSurface: string,
 	command?: string[],
 ): Promise<string> {
-	const original = await requireSingleClient(runtime);
-	try {
-		const surface = parseSurface(
-			(
-				await action(
-					runtime,
-					withPaneCommand(
-						[
-							"new-pane",
-							"--stacked",
-							"--near-current-pane",
-							"--name",
-							name,
-							"--cwd",
-							process.cwd(),
-						],
-						command,
-					),
-					anchorSurface,
-				)
-			).trim(),
-			"new-pane --stacked",
-		);
-		if (!command) await waitForPane(runtime, surface);
-		return surface;
-	} finally {
-		await restoreFocus(runtime, original);
-	}
+	const surface = parseSurface(
+		(
+			await action(
+				runtime,
+				withPaneCommand(
+					[
+						"new-pane",
+						"--stacked",
+						"--near-current-pane",
+						"--no-focus",
+						"--name",
+						name,
+						"--cwd",
+						process.cwd(),
+					],
+					command,
+				),
+				anchorSurface,
+			)
+		).trim(),
+		"new-pane --stacked",
+	);
+	if (!command) await waitForPane(runtime, surface);
+	return surface;
 }
 
 async function createFloating(
@@ -240,6 +177,7 @@ async function createFloating(
 						"--pinned",
 						"true",
 						"--near-current-pane",
+						"--no-focus",
 						"--name",
 						name,
 						"--cwd",
@@ -261,12 +199,8 @@ async function createTab(
 	name: string,
 	command?: string[],
 ): Promise<{ surface: string; tabId: number }> {
-	const original = await requireSingleClient(runtime);
-	const originalTabPosition = (await readPanes(runtime)).find(
-		(candidate) => !candidate.is_plugin && candidate.id === surfacePaneId(original),
-	)?.tab_position;
 	const tabIdRaw = (
-		await action(runtime, ["new-tab", "--name", name, "--cwd", process.cwd()])
+		await action(runtime, ["new-tab", "--no-focus", "--name", name, "--cwd", process.cwd()])
 	).trim();
 	const tabId = Number(tabIdRaw);
 	if (!Number.isInteger(tabId)) {
@@ -287,9 +221,19 @@ async function createTab(
 					await action(
 						runtime,
 						withPaneCommand(
-							["new-pane", "--tab-id", String(tabId), "--name", name, "--cwd", process.cwd()],
+							[
+								"new-pane",
+								"--no-focus",
+								"--tab-id",
+								String(tabId),
+								"--name",
+								name,
+								"--cwd",
+								process.cwd(),
+							],
 							command,
 						),
+						`pane:${pane.id}`,
 					)
 				).trim(),
 				"new-pane in new tab",
@@ -301,13 +245,11 @@ async function createTab(
 				await action(runtime, ["rename-pane", name], surface);
 			} catch {}
 		}
-		await restoreFocus(runtime, original, originalTabPosition);
 		return { surface, tabId };
 	} catch (error) {
 		try {
 			await action(runtime, ["close-tab", "--tab-id", String(tabId)]);
 		} catch {}
-		await restoreFocus(runtime, original, originalTabPosition);
 		throw error;
 	}
 }

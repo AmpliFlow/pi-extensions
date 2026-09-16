@@ -231,13 +231,12 @@ fi
 		assert.equal(await createZellijSurface("second", context), "pane:31");
 
 		const log = readFileSync(logFile, "utf8");
-		assert.match(log, /focus-pane-id terminal_10/);
 		assert.match(
 			log,
 			/new-pane --direction right --no-focus --tab-id 1.*-- \/bin\/bash --noprofile --norc -c pi/,
 		);
-		assert.match(log, /new-pane --stacked --near-current-pane.*\| pane=30/);
-		assert.match(log, /focus-previous-pane/);
+		assert.match(log, /new-pane --stacked --near-current-pane --no-focus.*\| pane=30/);
+		assert.doesNotMatch(log, /action list-clients|action focus-pane-id|action focus-previous-pane/);
 		assert.doesNotMatch(log, /--stacked.*\| pane=20/);
 	});
 
@@ -305,12 +304,11 @@ fi
 		]);
 		assert.equal(await createZellijSurface("second", context), "pane:31");
 		const log = readFileSync(logFile, "utf8");
-		assert.match(log, /new-tab --name first/);
-		assert.match(log, /new-pane --tab-id 2.*-- \/bin\/bash --noprofile/);
+		assert.match(log, /new-tab --no-focus --name first/);
+		assert.match(log, /new-pane --no-focus --tab-id 2.*-- \/bin\/bash --noprofile/);
 		assert.match(log, /close-pane --pane-id 40/);
-		assert.match(log, /go-to-tab 1/);
-		assert.match(log, /focus-pane-id terminal_10/);
-		assert.match(log, /new-pane --stacked --near-current-pane.*\| pane=30/);
+		assert.match(log, /new-pane --stacked --near-current-pane --no-focus.*\| pane=30/);
+		assert.doesNotMatch(log, /action list-clients|action focus-pane-id|action focus-previous-pane/);
 	});
 
 	it("stops watching when the owned child pane exits without a sentinel", async () => {
@@ -384,9 +382,22 @@ fi
 		writePanes(panesFile, [terminalPane(10, { pane_columns: 60, pane_rows: 60 }), terminalPane(20), terminalPane(30)]);
 		assert.equal(await createZellijSurface("second", context), "pane:31");
 
+		writePanes(panesFile, [terminalPane(10, { pane_columns: 40, pane_rows: 8 }), terminalPane(20)]);
+		assert.equal(
+			await createZellijCommandSurface(
+				"fallback-tab",
+				{ sessionName: process.env.ZELLIJ_SESSION_NAME!, parentPaneId: 10 },
+				["/bin/sh", "-c", "true"],
+				{ ...context, groupKey: "parent-session-multi-client-tab" },
+			),
+			"pane:32",
+		);
+
 		const log = readFileSync(logFile, "utf8");
 		assert.match(log, /new-pane --direction right --no-focus --tab-id 1.*\| pane=10/);
 		assert.match(log, /new-pane --direction down --no-focus --tab-id 1.*\| pane=10/);
+		assert.match(log, /new-tab --no-focus --name fallback-tab/);
+		assert.match(log, /new-pane --no-focus --tab-id 2.*\| pane=40/);
 		assert.doesNotMatch(log, /action list-clients|action focus-pane-id/);
 	});
 

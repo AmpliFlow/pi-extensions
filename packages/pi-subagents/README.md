@@ -94,7 +94,7 @@ Zellij uses `dwindle` placement by default. Set `PI_SUBAGENT_ZELLIJ_PLACEMENT` t
 - `floating`
 - `tab-stack`
 
-The runtime tracks the pane or tab it owns. Dwindle splits target the parent pane without changing any client's focus, so they continue to work when several clients are attached to the same Zellij session. Cancellation and parent shutdown close the owned surface rather than relying on process-name matching.
+The runtime tracks the pane or tab it owns. Splits, stacks, floating panes, and fallback tabs target their owned surfaces without changing any client's focus, so they continue to work when several clients are attached to the same Zellij session. Cancellation and parent shutdown close the owned surface rather than relying on process-name matching.
 
 ## Checklist integration
 
