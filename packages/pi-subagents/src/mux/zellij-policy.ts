@@ -20,6 +20,7 @@ export interface ZellijPaneSnapshot {
 export type ZellijSplitDirection = "down" | "right";
 export type ZellijPlacementPolicy =
 	| "auto"
+	| "dwindle"
 	| "right-stack"
 	| "down-stack"
 	| "floating"
@@ -43,6 +44,7 @@ export type ZellijFirstPlacementPlan =
 
 const ZELLIJ_PLACEMENT_POLICIES = new Set<ZellijPlacementPolicy>([
 	"auto",
+	"dwindle",
 	"right-stack",
 	"down-stack",
 	"floating",
@@ -56,7 +58,7 @@ export function resolveZellijPlacementPolicy(value: string | undefined): ZellijP
 	}
 	throw new Error(
 		`Invalid PI_SUBAGENT_ZELLIJ_PLACEMENT value "${value}". ` +
-			"Expected auto, right-stack, down-stack, floating, or tab-stack.",
+			"Expected auto, dwindle, right-stack, down-stack, floating, or tab-stack.",
 	);
 }
 

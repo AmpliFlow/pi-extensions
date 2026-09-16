@@ -79,6 +79,7 @@ const CHECKLIST_AGENT_DEFAULTS: AgentDefaults = {
 	timeout: 900,
 	onTimeout: "block-resume",
 	parentClosePolicy: "terminate",
+	env: "PI_SUBAGENT_ZELLIJ_PLACEMENT=dwindle",
 };
 
 const defaultRuntime: AfChecklistSubagentRuntime = {

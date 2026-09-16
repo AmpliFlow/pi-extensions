@@ -397,8 +397,12 @@ async function createZellijSurfaceOnce(
 			previous?.paneIds.filter((paneId) =>
 				panes.some((pane) => pane.id === paneId && !pane.exited),
 			) ?? [];
+		// Dwindle keeps splitting the shrinking parent pane instead of stacking
+		// siblings onto the first child pane.
 		const anchor =
-			previous?.policy === policy ? selectLiveOwnedZellijAnchor(panes, liveOwnedPaneIds) : null;
+			policy !== "dwindle" && previous?.policy === policy
+				? selectLiveOwnedZellijAnchor(panes, liveOwnedPaneIds)
+				: null;
 		if (anchor) {
 			const surface = await createStacked(runtime, name, `pane:${anchor.id}`, command);
 			state.groups[groupId] = {

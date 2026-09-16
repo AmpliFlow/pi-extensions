@@ -95,6 +95,7 @@ describe("owned Zellij surface placement", () => {
 			writeFileSync(bashEnv, `touch ${JSON.stringify(marker)}\n`);
 			process.env.SHELL = "/bin/bash";
 			const argv = getZellijShellCommand(`printf '%s|%s' "$BASH_ENV" "$ENV"`);
+			assert.equal(argv[0], "node");
 			const output = execFileSync(argv[0], argv.slice(1), {
 				env: { ...process.env, BASH_ENV: bashEnv, ENV: bashEnv },
 				encoding: "utf8",
@@ -185,6 +186,26 @@ fi
 			else process.env[key] = value;
 		}
 		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("keeps splitting the parent for dwindle placement", async () => {
+		writePanes(panesFile, [terminalPane(10)]);
+		const context: ZellijPlacementContext = {
+			groupKey: "parent-session-dwindle",
+			parentPaneId: 10,
+			policy: "dwindle",
+		};
+		assert.equal(await createZellijSurface("first", context), "pane:30");
+		writePanes(panesFile, [
+			terminalPane(10, { pane_columns: 60, pane_rows: 60 }),
+			terminalPane(30),
+		]);
+		assert.equal(await createZellijSurface("second", context), "pane:31");
+
+		const log = readFileSync(logFile, "utf8");
+		assert.match(log, /new-pane --direction right --tab-id 1/);
+		assert.match(log, /new-pane --direction down --tab-id 1/);
+		assert.doesNotMatch(log, /new-pane --stacked/);
 	});
 
 	it("splits only the parent for the first child and stacks siblings on the owned pane", async () => {

@@ -37,6 +37,7 @@ describe("interactive shell command builder", () => {
 			assert.ok(command.includes("cd '/some/cwd' && "));
 			assert.ok(command.includes(getRunChildLauncherPath()));
 			assert.ok(command.includes(capsulePath));
+			assert.match(command, /'node' '[^']*run-child\.mjs'/);
 			// The observable pane command must not carry any env material.
 			assert.ok(!command.includes("leaky-secret-value"));
 			assert.ok(!command.includes("override-secret"));

@@ -153,7 +153,9 @@ export function getZellijShellCommand(command: string): string[] {
 	else if (name === "zsh") args = ["-f", "-c", command];
 	else if (["sh", "dash", "ksh"].includes(name)) args = ["-c", command];
 	else throw new Error(`Unsupported Zellij child shell: ${name || "unset"}.`);
-	return [process.execPath, "-e", SHELL_LAUNCHER, shell, ...args];
+	// Pi's packaged executable sets process.execPath to the Pi binary. Use Node
+	// explicitly because this launcher is JavaScript passed through `node -e`.
+	return ["node", "-e", SHELL_LAUNCHER, shell, ...args];
 }
 export async function closeZellijSurface(surface: string, target?: ZellijTarget): Promise<void> {
 	await runZellijAction(target ?? (await resolveZellijTarget()), ["close-pane"], surface);

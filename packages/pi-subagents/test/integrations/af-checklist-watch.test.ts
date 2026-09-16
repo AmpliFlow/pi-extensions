@@ -146,6 +146,7 @@ describe("af-checklist-watch async subagent provider", () => {
 				spawning: false,
 				timeout: 900,
 				parentClosePolicy: "terminate",
+				env: "PI_SUBAGENT_ZELLIJ_PLACEMENT=dwindle",
 			},
 		});
 

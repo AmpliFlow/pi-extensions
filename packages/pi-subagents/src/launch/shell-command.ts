@@ -61,7 +61,9 @@ export function buildInteractiveShellCommand(
 		...(input.deriveZellijPaneSurface ? { deriveZellijPaneSurface: true } : {}),
 	});
 	const sentinel = buildInteractiveSentinelShellCommands(input.doneSentinelFile);
-	const launcher = `${shellEscape(process.execPath)} ${shellEscape(getRunChildLauncherPath())} ${shellEscape(capsulePath)}`;
+	// Pi can run as a bundled executable, where process.execPath is the Pi binary,
+	// not a JavaScript runtime. run-child.mjs must always be launched with Node.
+	const launcher = `${shellEscape("node")} ${shellEscape(getRunChildLauncherPath())} ${shellEscape(capsulePath)}`;
 	const command =
 		`trap ${shellEscape(sentinel.exitTrap)} EXIT; ` +
 		`${buildShellChangeDirectoryPrefix(input.cwd)}${launcher}; ${sentinel.direct}`;
