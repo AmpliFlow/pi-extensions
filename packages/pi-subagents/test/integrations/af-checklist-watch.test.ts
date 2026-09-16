@@ -212,16 +212,25 @@ describe("af-checklist-watch async subagent provider", () => {
 	});
 
 	it("maps timeout and caller-ping outcomes without parent steer delivery", async () => {
-		for (const [outcome, expected] of [
-			[result({ timedOut: "timeout", timedOutAfter: 900 }), "timed_out"],
-			[result({ summary: "", ping: { name: "worker", message: "Need approval" } }), "completed"],
+		for (const [outcome, expected, expectedError] of [
+			[
+				result({ timedOut: "timeout", timedOutAfter: 900 }),
+				"timed_out",
+				"Checklist subagent timed out after 900 seconds.",
+			],
+			[
+				result({ summary: "", ping: { name: "worker", message: "Need approval" } }),
+				"completed",
+				undefined,
+			],
 		] as const) {
 			const h = harness();
 			const r = request();
 			h.events.get(AF_CHECKLIST_ASYNC_SUBAGENT_EVENT)?.(r.value);
 			h.completion.resolve(outcome);
 			await tick();
-			expect(r.completions[0]?.state).toBe(expected);
+			expect(r.completions[0]).toMatchObject({ state: expected });
+			expect(r.completions[0]?.error).toBe(expectedError);
 			expect(h.pi.sendMessage).not.toHaveBeenCalled();
 		}
 	});

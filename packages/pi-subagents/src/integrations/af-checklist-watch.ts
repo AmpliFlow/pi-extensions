@@ -151,7 +151,15 @@ function completionFromResult(
 ): AfChecklistSubagentCompletion {
 	const output = result.ping?.message || result.summary || undefined;
 	if (result.timedOut) {
-		return { launchId, state: "timed_out", output, error: result.errorMessage || result.error };
+		const timeoutError = result.timedOutAfter
+			? `Checklist subagent timed out after ${result.timedOutAfter} seconds.`
+			: "Checklist subagent timed out.";
+		return {
+			launchId,
+			state: "timed_out",
+			output,
+			error: result.errorMessage || result.error || timeoutError,
+		};
 	}
 	if (result.error === "cancelled") {
 		return { launchId, state: "cancelled", output, error: result.errorMessage };
