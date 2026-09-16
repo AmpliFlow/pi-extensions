@@ -1,0 +1,10 @@
+{
+  "project_bindings": [
+    {
+      "project_id": "3cadf379-7742-45a1-9767-873bc70831cc",
+      "project_ref": 41
+    }
+  ],
+  "schema_version": 2,
+  "tenant": "ampliflow.pbjorklund.com"
+}
