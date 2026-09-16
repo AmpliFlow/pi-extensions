@@ -37,8 +37,9 @@ describe("zellij placement", () => {
 		);
 	});
 
-	it("resolves supported operator policies and rejects invalid values", () => {
-		assert.equal(resolveZellijPlacementPolicy(undefined), "auto");
+	it("defaults to dwindle, resolves explicit operator policies, and rejects invalid values", () => {
+		assert.equal(resolveZellijPlacementPolicy(undefined), "dwindle");
+		assert.equal(resolveZellijPlacementPolicy("auto"), "auto");
 		assert.equal(resolveZellijPlacementPolicy("right-stack"), "right-stack");
 		assert.equal(resolveZellijPlacementPolicy("down-stack"), "down-stack");
 		assert.equal(resolveZellijPlacementPolicy("floating"), "floating");

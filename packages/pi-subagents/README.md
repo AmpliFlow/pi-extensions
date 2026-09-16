@@ -85,10 +85,10 @@ See the source agent parser in `src/agents/definitions.ts` for the complete fiel
 
 ## Multiplexer placement
 
-Set `PI_SUBAGENT_ZELLIJ_PLACEMENT` when using Zellij:
+Zellij uses `dwindle` placement by default. Set `PI_SUBAGENT_ZELLIJ_PLACEMENT` to override it:
 
+- `dwindle` (default)
 - `auto`
-- `dwindle`
 - `right-stack`
 - `down-stack`
 - `floating`

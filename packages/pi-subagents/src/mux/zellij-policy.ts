@@ -52,7 +52,7 @@ const ZELLIJ_PLACEMENT_POLICIES = new Set<ZellijPlacementPolicy>([
 ]);
 
 export function resolveZellijPlacementPolicy(value: string | undefined): ZellijPlacementPolicy {
-	if (!value) return "auto";
+	if (!value) return "dwindle";
 	if (ZELLIJ_PLACEMENT_POLICIES.has(value as ZellijPlacementPolicy)) {
 		return value as ZellijPlacementPolicy;
 	}
