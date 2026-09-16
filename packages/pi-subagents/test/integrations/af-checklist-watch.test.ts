@@ -131,6 +131,11 @@ describe("af-checklist-watch async subagent provider", () => {
 			async: true,
 			blocking: false,
 			background: false,
+			launchEnv: {
+				PI_AF_CHECKLIST_AUDIT_REQUEST_ID: "request-1",
+				PI_AF_CHECKLIST_AUDIT_LAUNCH_ID: expect.stringMatching(/^af-checklist-/),
+				PI_AF_CHECKLIST_AUDIT_DIR: expect.stringContaining("af-checklist-watch"),
+			},
 		});
 		expect(context).toMatchObject({
 			cwd: "/repo",

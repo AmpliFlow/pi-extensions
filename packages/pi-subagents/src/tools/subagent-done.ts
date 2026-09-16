@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { installChecklistChildAudit } from "../audit/checklist-audit.js";
 import {
 	endedAtToolUseBoundary,
 	findLatestAssistantError,
@@ -142,6 +143,7 @@ export function installDeniedToolGuards(
 }
 
 export default function (pi: ExtensionAPI) {
+	installChecklistChildAudit(pi);
 	const typebox = optionalRequire("typebox") as typeof import("typebox") | null;
 	const doneParams = typebox?.Type?.Object
 		? typebox.Type.Object({})

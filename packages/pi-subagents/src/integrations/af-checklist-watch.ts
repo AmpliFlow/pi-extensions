@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentDefaults } from "../agents/definitions.js";
+import { resolveChecklistAuditDirectory } from "../audit/checklist-audit.js";
 import type { SubagentLaunchContext } from "../launch/prep.js";
 import { isMuxAvailable } from "../mux.js";
 import { routeSubagentOutcome } from "../runtime/result-router.js";
@@ -272,6 +273,11 @@ export function registerAfChecklistSubagentProvider(
 					async: true,
 					blocking: false,
 					background: false,
+					launchEnv: {
+						PI_AF_CHECKLIST_AUDIT_DIR: resolveChecklistAuditDirectory(value.cwd),
+						PI_AF_CHECKLIST_AUDIT_REQUEST_ID: value.requestId,
+						PI_AF_CHECKLIST_AUDIT_LAUNCH_ID: launchId,
+					},
 				};
 				running = await runtime.launch(params, launchContext(value, activeContext, pi, launchId));
 				runtime.claimSlot(running);

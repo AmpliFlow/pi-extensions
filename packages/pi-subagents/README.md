@@ -88,6 +88,7 @@ See the source agent parser in `src/agents/definitions.ts` for the complete fiel
 Set `PI_SUBAGENT_ZELLIJ_PLACEMENT` when using Zellij:
 
 - `auto`
+- `dwindle`
 - `right-stack`
 - `down-stack`
 - `floating`
@@ -98,6 +99,8 @@ The runtime tracks the pane or tab it owns. Cancellation and parent shutdown clo
 ## Checklist integration
 
 `af-checklist-watch` uses the private event documented in [docs/af-checklist-watch-event.md](docs/af-checklist-watch-event.md). The event always launches a visible asynchronous worker with a fixed profile. It is not a generic job API.
+
+Checklist workers append finalized messages, tool calls, tool results, operator input in the child pane, lifecycle events, and completion output to the watcher's daily JSONL audit file under `~/.pi/agent/logs/af-checklist-watch/`. Records omit private reasoning and replace credential-shaped fields with a redaction marker and digest. The child shuts down if audit initialization fails.
 
 ## Installation
 

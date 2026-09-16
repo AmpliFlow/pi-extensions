@@ -28,6 +28,8 @@ The provider owns the launch policy:
 - standalone temporary child session
 - 900-second timeout
 - termination on parent close
+- dwindle placement in Zellij
+- mandatory JSONL audit logging for finalized messages, tool activity, direct operator input, and lifecycle events
 
 The request cannot override tools, model, timeout, environment, session policy, or execution mode. The provider rejects a missing interactive session, a mismatched working directory, an unavailable multiplexer, invalid input, cancellation before launch, or exhausted spawn capacity.
 
