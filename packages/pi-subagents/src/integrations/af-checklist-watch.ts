@@ -84,8 +84,6 @@ const CHECKLIST_AGENT_DEFAULTS: AgentDefaults = {
 	async: true,
 	noSession: true,
 	trustProject: false,
-	timeout: 900,
-	onTimeout: "block-resume",
 	parentClosePolicy: "terminate",
 	env: "PI_SUBAGENT_ZELLIJ_PLACEMENT=right-stack",
 };
@@ -162,7 +160,12 @@ function completionFromResult(
 		};
 	}
 	if (result.error === "cancelled") {
-		return { launchId, state: "cancelled", output, error: result.errorMessage };
+		return {
+			launchId,
+			state: "cancelled",
+			output,
+			error: result.errorMessage || "Checklist subagent was cancelled.",
+		};
 	}
 	if (result.exitCode === 0 && !result.errorMessage) {
 		return { launchId, state: "completed", output };
@@ -199,13 +202,16 @@ export function registerAfChecklistSubagentProvider(
 	runtime: AfChecklistSubagentRuntime = defaultRuntime,
 ): void {
 	let context: ExtensionContext | undefined;
+	let sessionGeneration = 0;
 	const owned = new Set<RunningSubagent>();
 
 	pi.on("session_start", (_event, ctx) => {
 		context = ctx;
+		sessionGeneration += 1;
 	});
 	pi.on("session_shutdown", async () => {
 		context = undefined;
+		sessionGeneration += 1;
 		await Promise.allSettled([...owned].map((running) => runtime.stop(running)));
 	});
 
@@ -267,6 +273,7 @@ export function registerAfChecklistSubagentProvider(
 		}
 
 		const activeContext = context;
+		const activeSessionGeneration = sessionGeneration;
 		void (async () => {
 			let running: RunningSubagent | undefined;
 			let abort: (() => void) | undefined;
@@ -304,6 +311,19 @@ export function registerAfChecklistSubagentProvider(
 				running = await runtime.launch(params, launchContext(value, activeContext, pi, launchId));
 				runtime.claimSlot(running);
 				owned.add(running);
+				if (context !== activeContext || sessionGeneration !== activeSessionGeneration) {
+					try {
+						await runtime.stop(running);
+					} catch {}
+					runtime.releaseSlot(running);
+					runningSubagents.delete(running.id);
+					completeOnce({
+						launchId,
+						state: "cancelled",
+						error: "Parent Pi session ended before checklist subagent launch completed.",
+					});
+					return;
+				}
 				running.allowSteerDelivery = false;
 				const watcherAbort = new AbortController();
 				running.abortController = watcherAbort;

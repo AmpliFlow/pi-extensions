@@ -155,11 +155,13 @@ describe("af-checklist-watch async subagent provider", () => {
 				extensions: "none",
 				skills: "none",
 				spawning: false,
-				timeout: 900,
 				parentClosePolicy: "terminate",
 				env: "PI_SUBAGENT_ZELLIJ_PLACEMENT=right-stack",
 			},
 		});
+		expect(context.agentDefaultsOverride).not.toHaveProperty("timeout");
+		expect(context.agentDefaultsOverride).not.toHaveProperty("idleTimeout");
+		expect(context.agentDefaultsOverride).not.toHaveProperty("onTimeout");
 
 		h.completion.resolve(result());
 		await tick();
@@ -182,7 +184,10 @@ describe("af-checklist-watch async subagent provider", () => {
 		h.completion.resolve(result({ exitCode: 1, error: "cancelled" }));
 		await tick();
 		expect(r.completions).toHaveLength(1);
-		expect(r.completions[0]).toMatchObject({ state: "cancelled" });
+		expect(r.completions[0]).toMatchObject({
+			state: "cancelled",
+			error: "Checklist subagent was cancelled.",
+		});
 	});
 
 	it("fails closed before launch for missing UI, cwd mismatch, and full capacity", () => {
@@ -211,13 +216,14 @@ describe("af-checklist-watch async subagent provider", () => {
 		expect(h.runtime.launch).not.toHaveBeenCalled();
 	});
 
-	it("maps timeout and caller-ping outcomes without parent steer delivery", async () => {
+	it("maps timeout, failure, and caller-ping outcomes without parent steer delivery", async () => {
 		for (const [outcome, expected, expectedError] of [
 			[
 				result({ timedOut: "timeout", timedOutAfter: 900 }),
 				"timed_out",
 				"Checklist subagent timed out after 900 seconds.",
 			],
+			[result({ exitCode: 7, summary: "" }), "failed", "Subagent exited with code 7."],
 			[
 				result({ summary: "", ping: { name: "worker", message: "Need approval" } }),
 				"completed",
@@ -233,6 +239,26 @@ describe("af-checklist-watch async subagent provider", () => {
 			expect(r.completions[0]?.error).toBe(expectedError);
 			expect(h.pi.sendMessage).not.toHaveBeenCalled();
 		}
+	});
+
+	it("stops a pane whose launch finishes after the parent session shuts down", async () => {
+		const h = harness();
+		const launch = deferred<RunningSubagent>();
+		vi.mocked(h.runtime.launch).mockImplementation(() => launch.promise);
+		const r = request();
+
+		h.events.get(AF_CHECKLIST_ASYNC_SUBAGENT_EVENT)?.(r.value);
+		await h.handlers.get("session_shutdown")?.({}, h.context);
+		launch.resolve(h.child);
+		await tick();
+
+		expect(h.runtime.stop).toHaveBeenCalledWith(h.child);
+		expect(r.completions).toEqual([
+			expect.objectContaining({
+				state: "cancelled",
+				error: "Parent Pi session ended before checklist subagent launch completed.",
+			}),
+		]);
 	});
 
 	it("rejects an unavailable multiplexer and cancels owned panes on shutdown", async () => {
