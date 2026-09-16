@@ -30,7 +30,8 @@ The provider owns the launch policy:
 - termination on parent close
 - dwindle placement in Zellij
 - mandatory JSONL audit logging for finalized messages, tool activity, direct operator input, and lifecycle events
+- a trusted unattended-work policy: a finalized human approval authorizes its exact immediately downstream action, while unfinished human approval steps wait through AmpliFlow without requiring terminal attention
 
-The request cannot override tools, model, timeout, environment, session policy, or execution mode. The provider rejects a missing interactive session, a mismatched working directory, an unavailable multiplexer, invalid input, cancellation before launch, or exhausted spawn capacity.
+The request cannot override tools, model, timeout, environment, session policy, authorization policy, or execution mode. The provider rejects a missing interactive session, a mismatched working directory, an unavailable multiplexer, invalid input, cancellation before launch, or exhausted spawn capacity.
 
 This event is a compatibility seam between two trusted installed extensions, not a public generic background-job protocol.

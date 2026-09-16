@@ -146,6 +146,10 @@ describe("af-checklist-watch async subagent provider", () => {
 			agentDefaultsOverride: {
 				mode: "interactive",
 				autoExit: true,
+				systemPromptMode: "append",
+				body: expect.stringContaining(
+					"A finalized human approval step authorizes the exact immediately downstream action",
+				),
 				tools: "read,bash,edit,write",
 				extensions: "none",
 				skills: "none",
