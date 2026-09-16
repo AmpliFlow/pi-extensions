@@ -203,8 +203,8 @@ fi
 		assert.equal(await createZellijSurface("second", context), "pane:31");
 
 		const log = readFileSync(logFile, "utf8");
-		assert.match(log, /new-pane --direction right --tab-id 1/);
-		assert.match(log, /new-pane --direction down --tab-id 1/);
+		assert.match(log, /new-pane --direction right --no-focus --tab-id 1/);
+		assert.match(log, /new-pane --direction down --no-focus --tab-id 1/);
 		assert.doesNotMatch(log, /new-pane --stacked/);
 	});
 
@@ -234,7 +234,7 @@ fi
 		assert.match(log, /focus-pane-id terminal_10/);
 		assert.match(
 			log,
-			/new-pane --direction right --tab-id 1.*-- \/bin\/bash --noprofile --norc -c pi/,
+			/new-pane --direction right --no-focus --tab-id 1.*-- \/bin\/bash --noprofile --norc -c pi/,
 		);
 		assert.match(log, /new-pane --stacked --near-current-pane.*\| pane=30/);
 		assert.match(log, /focus-previous-pane/);
@@ -371,18 +371,23 @@ fi
 		assert.doesNotMatch(log, /--stacked/);
 	});
 
-	it("rejects focus-mutating placement with multiple attached clients", async () => {
+	it("creates dwindle panes without mutating focus when multiple clients are attached", async () => {
 		writePanes(panesFile, [terminalPane(10), terminalPane(20)]);
 		process.env.FAKE_ZELLIJ_MULTI_CLIENT = "1";
-		await assert.rejects(
-			() =>
-				createZellijSurface("blocked", {
-					groupKey: "parent-session-multi-client",
-					parentPaneId: 10,
-					policy: "right-stack",
-				}),
-			/exactly one attached client.*found 2/,
-		);
+		const context: ZellijPlacementContext = {
+			groupKey: "parent-session-multi-client",
+			parentPaneId: 10,
+			policy: "dwindle",
+		};
+
+		assert.equal(await createZellijSurface("first", context), "pane:30");
+		writePanes(panesFile, [terminalPane(10, { pane_columns: 60, pane_rows: 60 }), terminalPane(20), terminalPane(30)]);
+		assert.equal(await createZellijSurface("second", context), "pane:31");
+
+		const log = readFileSync(logFile, "utf8");
+		assert.match(log, /new-pane --direction right --no-focus --tab-id 1.*\| pane=10/);
+		assert.match(log, /new-pane --direction down --no-focus --tab-id 1.*\| pane=10/);
+		assert.doesNotMatch(log, /action list-clients|action focus-pane-id/);
 	});
 
 	it("creates independent floating panes without a stack anchor", async () => {

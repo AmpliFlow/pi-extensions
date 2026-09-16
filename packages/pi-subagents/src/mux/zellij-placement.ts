@@ -91,7 +91,7 @@ async function requireSingleClient(runtime: ZellijTarget): Promise<string> {
 	const clients = await readClientSurfaces(runtime);
 	if (clients.length !== 1) {
 		throw new Error(
-			"Zellij right/down/stack/tab placement requires exactly one attached client " +
+			"Zellij stacked or tab placement requires exactly one attached client " +
 				`to preserve focus; found ${clients.length}. Use floating placement or detach extra clients.`,
 		);
 	}
@@ -159,36 +159,32 @@ async function createSplit(
 	direction: ZellijSplitDirection,
 	command?: string[],
 ): Promise<string> {
-	const original = await requireSingleClient(runtime);
-	await focusPane(runtime, parentSurface);
-	try {
-		const surface = parseSurface(
-			(
-				await action(
-					runtime,
-					withPaneCommand(
-						[
-							"new-pane",
-							"--direction",
-							direction,
-							"--tab-id",
-							String(tabId),
-							"--name",
-							name,
-							"--cwd",
-							process.cwd(),
-						],
-						command,
-					),
-				)
-			).trim(),
-			`new-pane --direction ${direction}`,
-		);
-		if (!command) await waitForPane(runtime, surface);
-		return surface;
-	} finally {
-		await restoreFocus(runtime, original);
-	}
+	const surface = parseSurface(
+		(
+			await action(
+				runtime,
+				withPaneCommand(
+					[
+						"new-pane",
+						"--direction",
+						direction,
+						"--no-focus",
+						"--tab-id",
+						String(tabId),
+						"--name",
+						name,
+						"--cwd",
+						process.cwd(),
+					],
+					command,
+				),
+				parentSurface,
+			)
+		).trim(),
+		`new-pane --direction ${direction}`,
+	);
+	if (!command) await waitForPane(runtime, surface);
+	return surface;
 }
 
 async function createStacked(
