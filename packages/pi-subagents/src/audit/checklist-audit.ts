@@ -75,6 +75,7 @@ class ChildChecklistAuditLogger {
 		private readonly actorId: string,
 		private readonly requestId: string,
 		private readonly launchId: string,
+		private readonly parentSessionId: string | undefined,
 	) {}
 
 	write(eventType: string, payload?: unknown): void {
@@ -92,6 +93,7 @@ class ChildChecklistAuditLogger {
 			actor: { type: "checklist_agent", id: this.actorId },
 			requestId: this.requestId,
 			launchId: this.launchId,
+			...(this.parentSessionId ? { sessionId: this.parentSessionId } : {}),
 			...(payload === undefined ? {} : { payload: sanitize(payload) }),
 		};
 		const serialized = JSON.stringify(unsigned);
@@ -122,6 +124,7 @@ export function installChecklistChildAudit(pi: ExtensionAPI): void {
 		process.env.PI_SUBAGENT_NAME ?? "checklist-agent",
 		process.env.PI_AF_CHECKLIST_AUDIT_REQUEST_ID ?? "unknown",
 		process.env.PI_AF_CHECKLIST_AUDIT_LAUNCH_ID ?? "unknown",
+		process.env.PI_AF_CHECKLIST_AUDIT_PARENT_SESSION_ID,
 	);
 	const write = (eventType: string, payload?: unknown) => logger.write(eventType, payload);
 	const writeOrShutdown = (
@@ -147,8 +150,12 @@ export function installChecklistChildAudit(pi: ExtensionAPI): void {
 			ctx,
 		);
 	});
+	let initialTaskLogged = false;
 	pi.on("input", async (event, ctx) => {
-		if (event.source !== "extension") writeOrShutdown("operator.child_input", event, ctx);
+		if (event.source === "extension") return;
+		const eventType = initialTaskLogged ? "operator.child_input" : "extension.child_task";
+		initialTaskLogged = true;
+		writeOrShutdown(eventType, event, ctx);
 	});
 	pi.on("message_end", async (event, ctx) => {
 		writeOrShutdown("checklist_agent.message", event.message, ctx);

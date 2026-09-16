@@ -277,6 +277,12 @@ export function registerAfChecklistSubagentProvider(
 						PI_AF_CHECKLIST_AUDIT_DIR: resolveChecklistAuditDirectory(value.cwd),
 						PI_AF_CHECKLIST_AUDIT_REQUEST_ID: value.requestId,
 						PI_AF_CHECKLIST_AUDIT_LAUNCH_ID: launchId,
+						...(activeContext.sessionManager.getSessionId?.()
+							? {
+									PI_AF_CHECKLIST_AUDIT_PARENT_SESSION_ID:
+										activeContext.sessionManager.getSessionId(),
+								}
+							: {}),
 					},
 				};
 				running = await runtime.launch(params, launchContext(value, activeContext, pi, launchId));

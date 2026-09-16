@@ -134,6 +134,7 @@ describe("af-checklist-watch async subagent provider", () => {
 			launchEnv: {
 				PI_AF_CHECKLIST_AUDIT_REQUEST_ID: "request-1",
 				PI_AF_CHECKLIST_AUDIT_LAUNCH_ID: expect.stringMatching(/^af-checklist-/),
+				PI_AF_CHECKLIST_AUDIT_PARENT_SESSION_ID: "parent",
 				PI_AF_CHECKLIST_AUDIT_DIR: expect.stringContaining("af-checklist-watch"),
 			},
 		});

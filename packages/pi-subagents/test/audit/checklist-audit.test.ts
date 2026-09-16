@@ -9,6 +9,7 @@ const previousEnv = {
 	directory: process.env.PI_AF_CHECKLIST_AUDIT_DIR,
 	requestId: process.env.PI_AF_CHECKLIST_AUDIT_REQUEST_ID,
 	launchId: process.env.PI_AF_CHECKLIST_AUDIT_LAUNCH_ID,
+	parentSessionId: process.env.PI_AF_CHECKLIST_AUDIT_PARENT_SESSION_ID,
 	name: process.env.PI_SUBAGENT_NAME,
 };
 
@@ -17,6 +18,7 @@ afterEach(() => {
 		["PI_AF_CHECKLIST_AUDIT_DIR", previousEnv.directory],
 		["PI_AF_CHECKLIST_AUDIT_REQUEST_ID", previousEnv.requestId],
 		["PI_AF_CHECKLIST_AUDIT_LAUNCH_ID", previousEnv.launchId],
+		["PI_AF_CHECKLIST_AUDIT_PARENT_SESSION_ID", previousEnv.parentSessionId],
 		["PI_SUBAGENT_NAME", previousEnv.name],
 	] as const) {
 		if (value === undefined) delete process.env[key];
@@ -30,6 +32,7 @@ describe("checklist child audit", () => {
 		process.env.PI_AF_CHECKLIST_AUDIT_DIR = directory;
 		process.env.PI_AF_CHECKLIST_AUDIT_REQUEST_ID = "actual-1";
 		process.env.PI_AF_CHECKLIST_AUDIT_LAUNCH_ID = "launch-1";
+		process.env.PI_AF_CHECKLIST_AUDIT_PARENT_SESSION_ID = "parent-session-1";
 		process.env.PI_SUBAGENT_NAME = "worker-1";
 		const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
 		const pi = {
@@ -77,6 +80,7 @@ describe("checklist child audit", () => {
 			"checklist_agent.session_shutdown",
 		]);
 		expect(records.every((record) => record.requestId === "actual-1")).toBe(true);
+		expect(records.every((record) => record.sessionId === "parent-session-1")).toBe(true);
 		rmSync(directory, { recursive: true, force: true });
 	});
 });
