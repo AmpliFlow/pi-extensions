@@ -162,9 +162,20 @@ export async function closeZellijSurface(surface: string, target?: ZellijTarget)
 }
 
 export async function isZellijSurfaceLive(target: ZellijTarget, surface: string): Promise<boolean> {
-	const panes = JSON.parse(await runZellijAction(target, ["list-panes", "--all", "--json"]));
-	return (
-		Array.isArray(panes) &&
-		panes.some((pane) => !pane?.is_plugin && !pane?.exited && pane?.id === Number(paneId(surface)))
-	);
+	let lastError: unknown;
+	for (let attempt = 0; attempt < 3; attempt++) {
+		try {
+			const panes = JSON.parse(
+				await runZellijAction(target, ["list-panes", "--all", "--json"]),
+			);
+			if (!Array.isArray(panes)) throw new Error("Zellij returned an invalid pane list.");
+			return panes.some(
+				(pane) => !pane?.is_plugin && !pane?.exited && pane?.id === Number(paneId(surface)),
+			);
+		} catch (error) {
+			lastError = error;
+			if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 50));
+		}
+	}
+	throw lastError;
 }
