@@ -125,7 +125,7 @@ async function closeRunningSurface(running: RunningSubagent): Promise<void> {
 
 export async function stopRunningSubagent(
 	running: RunningSubagent,
-	options: { operator?: boolean } = {},
+	options: { operator?: boolean; requireSurfaceClose?: boolean } = {},
 ): Promise<void> {
 	// A verified fan-out has no child process in this parent: its candidates
 	// belong to a detached supervisor. Kill = cancel the run (supervisor kills
@@ -144,7 +144,9 @@ export async function stopRunningSubagent(
 			// surfaced by the cancelled manifest state instead
 		}
 	}
-	await stopRunningSubagentWithDeps(running, closeRunningSurface);
+	await stopRunningSubagentWithDeps(running, closeRunningSurface, {
+		requireSurfaceClose: options.requireSurfaceClose,
+	});
 	updateWidget();
 }
 

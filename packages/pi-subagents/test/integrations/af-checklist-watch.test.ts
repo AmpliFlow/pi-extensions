@@ -76,7 +76,6 @@ function harness() {
 		}),
 		claimSlot: vi.fn(),
 		releaseSlot: vi.fn(),
-		trackCompletion: vi.fn((_active, promise) => promise),
 		route: vi.fn(),
 	};
 	registerAfChecklistSubagentProvider(pi as unknown as ExtensionAPI, runtime);
@@ -155,21 +154,57 @@ describe("af-checklist-watch async subagent provider", () => {
 				extensions: "none",
 				skills: "none",
 				spawning: false,
+				timeout: 21600,
+				onTimeout: "block-resume",
 				parentClosePolicy: "terminate",
 				env: "PI_SUBAGENT_ZELLIJ_PLACEMENT=right-stack",
 			},
 		});
-		expect(context.agentDefaultsOverride).not.toHaveProperty("timeout");
 		expect(context.agentDefaultsOverride).not.toHaveProperty("idleTimeout");
-		expect(context.agentDefaultsOverride).not.toHaveProperty("onTimeout");
 
 		h.completion.resolve(result());
 		await tick();
 		expect(r.completions).toEqual([
 			expect.objectContaining({ state: "completed", output: "done" }),
 		]);
+		expect(h.runtime.releaseSlot).toHaveBeenCalledWith(h.child);
 		expect(h.runtime.route).toHaveBeenCalledOnce();
 		expect(h.pi.sendMessage).not.toHaveBeenCalled();
+	});
+
+	it("uses a validated provider-owned timeout override", async () => {
+		const previous = process.env.PI_AF_CHECKLIST_TIMEOUT_SECONDS;
+		try {
+			process.env.PI_AF_CHECKLIST_TIMEOUT_SECONDS = "28800";
+			const configured = harness();
+			const configuredRequest = request();
+			configured.events.get(AF_CHECKLIST_ASYNC_SUBAGENT_EVENT)?.(configuredRequest.value);
+			await tick();
+			const [, context] = vi.mocked(configured.runtime.launch).mock.calls[0];
+			expect(context.agentDefaultsOverride).toMatchObject({
+				timeout: 28800,
+				onTimeout: "block-resume",
+			});
+			configured.completion.resolve(result());
+			await tick();
+
+			process.env.PI_AF_CHECKLIST_TIMEOUT_SECONDS = "forever";
+			const invalid = harness();
+			const invalidRequest = request();
+			invalid.events.get(AF_CHECKLIST_ASYNC_SUBAGENT_EVENT)?.(invalidRequest.value);
+			await tick();
+			expect(invalid.runtime.launch).not.toHaveBeenCalled();
+			expect(invalid.runtime.releaseReservedSlot).toHaveBeenCalledOnce();
+			expect(invalidRequest.completions).toEqual([
+				expect.objectContaining({
+					state: "failed",
+					error: "PI_AF_CHECKLIST_TIMEOUT_SECONDS must be a positive integer.",
+				}),
+			]);
+		} finally {
+			if (previous === undefined) delete process.env.PI_AF_CHECKLIST_TIMEOUT_SECONDS;
+			else process.env.PI_AF_CHECKLIST_TIMEOUT_SECONDS = previous;
+		}
 	});
 
 	it("forwards cancellation to the owned pane and settles once", async () => {
@@ -188,6 +223,31 @@ describe("af-checklist-watch async subagent provider", () => {
 			state: "cancelled",
 			error: "Checklist subagent was cancelled.",
 		});
+	});
+
+	it("reports a cancellation close failure without releasing ownership", async () => {
+		const h = harness();
+		const stop = deferred<void>();
+		vi.mocked(h.runtime.stop).mockImplementation(() => stop.promise);
+		const controller = new AbortController();
+		const r = request({ signal: controller.signal });
+		h.events.get(AF_CHECKLIST_ASYNC_SUBAGENT_EVENT)?.(r.value);
+		await tick();
+
+		controller.abort();
+		h.completion.resolve(result({ exitCode: 1, error: "cancelled" }));
+		await tick();
+		expect(r.completions).toEqual([]);
+		stop.reject(new Error("zellij close failed"));
+		await tick();
+
+		expect(h.runtime.releaseSlot).not.toHaveBeenCalled();
+		expect(r.completions).toEqual([
+			expect.objectContaining({
+				state: "failed",
+				error: "Failed to close checklist subagent pane: zellij close failed",
+			}),
+		]);
 	});
 
 	it("fails closed before launch for missing UI, cwd mismatch, and full capacity", () => {
@@ -216,6 +276,26 @@ describe("af-checklist-watch async subagent provider", () => {
 		expect(h.runtime.launch).not.toHaveBeenCalled();
 	});
 
+	it("retains ownership when a timed-out pane could not be killed", async () => {
+		const h = harness();
+		const r = request();
+		h.events.get(AF_CHECKLIST_ASYNC_SUBAGENT_EVENT)?.(r.value);
+
+		h.completion.resolve(
+			result({ timedOut: "timeout", timedOutAfter: 21600, timeoutKillFailed: true }),
+		);
+		await tick();
+
+		expect(h.runtime.releaseSlot).not.toHaveBeenCalled();
+		expect(h.runtime.route).not.toHaveBeenCalled();
+		expect(r.completions).toEqual([
+			expect.objectContaining({
+				state: "failed",
+				error: "Checklist subagent timed out, but its pane could not be closed.",
+			}),
+		]);
+	});
+
 	it("maps timeout, failure, and caller-ping outcomes without parent steer delivery", async () => {
 		for (const [outcome, expected, expectedError] of [
 			[
@@ -241,22 +321,71 @@ describe("af-checklist-watch async subagent provider", () => {
 		}
 	});
 
-	it("stops a pane whose launch finishes after the parent session shuts down", async () => {
+	it("waits for and stops a pane whose launch finishes during parent shutdown", async () => {
 		const h = harness();
 		const launch = deferred<RunningSubagent>();
 		vi.mocked(h.runtime.launch).mockImplementation(() => launch.promise);
 		const r = request();
 
 		h.events.get(AF_CHECKLIST_ASYNC_SUBAGENT_EVENT)?.(r.value);
-		await h.handlers.get("session_shutdown")?.({}, h.context);
-		launch.resolve(h.child);
+		let shutdownFinished = false;
+		const shutdown = Promise.resolve(h.handlers.get("session_shutdown")?.({}, h.context)).then(
+			() => {
+				shutdownFinished = true;
+			},
+		);
 		await tick();
+		expect(shutdownFinished).toBe(false);
+
+		launch.resolve(h.child);
+		await shutdown;
 
 		expect(h.runtime.stop).toHaveBeenCalledWith(h.child);
 		expect(r.completions).toEqual([
 			expect.objectContaining({
 				state: "cancelled",
 				error: "Parent Pi session ended before checklist subagent launch completed.",
+			}),
+		]);
+	});
+
+	it("reports failed stale-pane cleanup without releasing its tracked slot", async () => {
+		const h = harness();
+		const launch = deferred<RunningSubagent>();
+		vi.mocked(h.runtime.launch).mockImplementation(() => launch.promise);
+		vi.mocked(h.runtime.stop).mockRejectedValue(new Error("zellij close failed"));
+		const r = request();
+
+		h.events.get(AF_CHECKLIST_ASYNC_SUBAGENT_EVENT)?.(r.value);
+		const shutdown = Promise.resolve(h.handlers.get("session_shutdown")?.({}, h.context));
+		launch.resolve(h.child);
+		await expect(shutdown).rejects.toThrow("zellij close failed");
+
+		expect(h.runtime.releaseSlot).not.toHaveBeenCalled();
+		expect(r.completions).toEqual([
+			expect.objectContaining({
+				state: "failed",
+				error: "Failed to close checklist subagent pane: zellij close failed",
+			}),
+		]);
+	});
+
+	it("surfaces an owned-pane close failure during parent shutdown", async () => {
+		const h = harness();
+		const r = request();
+		h.events.get(AF_CHECKLIST_ASYNC_SUBAGENT_EVENT)?.(r.value);
+		await tick();
+		vi.mocked(h.runtime.stop).mockRejectedValue(new Error("zellij close failed"));
+
+		const shutdown = Promise.resolve(h.handlers.get("session_shutdown")?.({}, h.context));
+		h.completion.resolve(result({ exitCode: 1, error: "cancelled" }));
+
+		await expect(shutdown).rejects.toThrow("zellij close failed");
+		expect(h.runtime.releaseSlot).not.toHaveBeenCalled();
+		expect(r.completions).toEqual([
+			expect.objectContaining({
+				state: "failed",
+				error: "Failed to close checklist subagent pane: zellij close failed",
 			}),
 		]);
 	});
@@ -272,8 +401,11 @@ describe("af-checklist-watch async subagent provider", () => {
 		const started = request();
 		active.events.get(AF_CHECKLIST_ASYNC_SUBAGENT_EVENT)?.(started.value);
 		await tick();
-		await active.handlers.get("session_shutdown")?.({}, active.context);
+		const shutdown = Promise.resolve(active.handlers.get("session_shutdown")?.({}, active.context));
+		await tick();
 		expect(active.runtime.stop).toHaveBeenCalledWith(active.child);
+		active.completion.resolve(result({ exitCode: 1, error: "cancelled" }));
+		await shutdown;
 	});
 
 	it("reports post-ack launch failures exactly once", async () => {

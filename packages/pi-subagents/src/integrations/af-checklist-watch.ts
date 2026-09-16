@@ -10,7 +10,6 @@ import {
 	getSpawnWidthLimit,
 	releaseSlots,
 	releaseSpawnWidthSlot,
-	releaseSpawnWidthSlotOnCompletion,
 	tryAcquireSlots,
 } from "../runtime/spawn-width.js";
 import {
@@ -24,6 +23,9 @@ import {
 import type { RunningSubagent, SubagentParamsInput, SubagentResult } from "../types.js";
 
 export const AF_CHECKLIST_ASYNC_SUBAGENT_EVENT = "pi:af-checklist-watch:v1:start";
+
+const DEFAULT_CHECKLIST_TIMEOUT_SECONDS = 6 * 60 * 60;
+const MAX_CHECKLIST_TIMEOUT_SECONDS = Math.floor(2_147_483_647 / 1000);
 
 export type AfChecklistSubagentState = "completed" | "failed" | "timed_out" | "cancelled";
 
@@ -59,10 +61,6 @@ export interface AfChecklistSubagentRuntime {
 	stop(running: RunningSubagent): Promise<void>;
 	claimSlot(running: RunningSubagent): void;
 	releaseSlot(running: RunningSubagent): void;
-	trackCompletion(
-		running: RunningSubagent,
-		completion: Promise<SubagentResult>,
-	): Promise<SubagentResult>;
 	route(pi: ExtensionAPI, running: RunningSubagent, result: SubagentResult): void;
 }
 
@@ -95,10 +93,9 @@ const defaultRuntime: AfChecklistSubagentRuntime = {
 	releaseReservedSlot: () => releaseSlots(1),
 	launch: launchSubagent,
 	watch: watchSubagent,
-	stop: stopRunningSubagent,
+	stop: (running) => stopRunningSubagent(running, { requireSurfaceClose: true }),
 	claimSlot: claimSpawnWidthSlot,
 	releaseSlot: releaseSpawnWidthSlot,
-	trackCompletion: releaseSpawnWidthSlotOnCompletion,
 	route: (pi, running, result) => {
 		routeSubagentOutcome({
 			pi,
@@ -141,6 +138,24 @@ function reject(request: AfChecklistSubagentRequest, error: string): void {
 	} catch {
 		// Consumer callbacks cannot interrupt the provider event loop.
 	}
+}
+
+function paneCloseFailure(error: unknown): string {
+	return `Failed to close checklist subagent pane: ${error instanceof Error ? error.message : String(error)}`;
+}
+
+function checklistTimeoutSeconds(raw = process.env.PI_AF_CHECKLIST_TIMEOUT_SECONDS): number {
+	if (raw === undefined || raw.trim() === "") return DEFAULT_CHECKLIST_TIMEOUT_SECONDS;
+	if (!/^\d+$/.test(raw.trim())) {
+		throw new Error("PI_AF_CHECKLIST_TIMEOUT_SECONDS must be a positive integer.");
+	}
+	const seconds = Number(raw.trim());
+	if (!Number.isSafeInteger(seconds) || seconds < 1 || seconds > MAX_CHECKLIST_TIMEOUT_SECONDS) {
+		throw new Error(
+			`PI_AF_CHECKLIST_TIMEOUT_SECONDS must be between 1 and ${MAX_CHECKLIST_TIMEOUT_SECONDS}.`,
+		);
+	}
+	return seconds;
 }
 
 function completionFromResult(
@@ -192,7 +207,11 @@ function launchContext(
 		modelRegistry: ctx.modelRegistry,
 		parentModelRef: ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined,
 		parentThinking: pi.getThinkingLevel() as string,
-		agentDefaultsOverride: CHECKLIST_AGENT_DEFAULTS,
+		agentDefaultsOverride: {
+			...CHECKLIST_AGENT_DEFAULTS,
+			timeout: checklistTimeoutSeconds(),
+			onTimeout: "block-resume",
+		},
 		zellijPlacementGroupKey: `af-checklist-watch:${ctx.sessionManager.getSessionId()}`,
 	};
 }
@@ -204,6 +223,8 @@ export function registerAfChecklistSubagentProvider(
 	let context: ExtensionContext | undefined;
 	let sessionGeneration = 0;
 	const owned = new Set<RunningSubagent>();
+	const activeTasks = new Set<Promise<unknown | undefined>>();
+	const shutdownStops = new Map<RunningSubagent, Promise<void>>();
 
 	pi.on("session_start", (_event, ctx) => {
 		context = ctx;
@@ -212,7 +233,34 @@ export function registerAfChecklistSubagentProvider(
 	pi.on("session_shutdown", async () => {
 		context = undefined;
 		sessionGeneration += 1;
-		await Promise.allSettled([...owned].map((running) => runtime.stop(running)));
+		const tasks = [...activeTasks];
+		const stops = [...owned].map((running) => {
+			const stop = runtime.stop(running);
+			shutdownStops.set(running, stop);
+			return stop;
+		});
+		const stopResults = await Promise.allSettled(stops);
+		const taskResults = await Promise.allSettled(tasks);
+		shutdownStops.clear();
+		const failures = [
+			...new Set(
+				[
+					...stopResults
+						.filter((result): result is PromiseRejectedResult => result.status === "rejected")
+						.map((result) => result.reason),
+					...taskResults.flatMap((result) =>
+						result.status === "rejected"
+							? [result.reason]
+							: result.value === undefined
+								? []
+								: [result.value],
+					),
+				].map((failure) => (failure instanceof Error ? failure.message : String(failure))),
+			),
+		];
+		if (failures.length > 0) {
+			throw new Error(`Failed to close checklist subagent pane: ${failures.join("; ")}`);
+		}
 	});
 
 	if (!pi.events?.on) return;
@@ -274,9 +322,11 @@ export function registerAfChecklistSubagentProvider(
 
 		const activeContext = context;
 		const activeSessionGeneration = sessionGeneration;
-		void (async () => {
+		const task = (async () => {
 			let running: RunningSubagent | undefined;
 			let abort: (() => void) | undefined;
+			let requestedStop: Promise<void> | undefined;
+			let retainOwnership = false;
 			try {
 				if (value.signal?.aborted) {
 					runtime.releaseReservedSlot();
@@ -314,7 +364,15 @@ export function registerAfChecklistSubagentProvider(
 				if (context !== activeContext || sessionGeneration !== activeSessionGeneration) {
 					try {
 						await runtime.stop(running);
-					} catch {}
+					} catch (error) {
+						retainOwnership = true;
+						completeOnce({
+							launchId,
+							state: "failed",
+							error: paneCloseFailure(error),
+						});
+						return error;
+					}
 					runtime.releaseSlot(running);
 					runningSubagents.delete(running.id);
 					completeOnce({
@@ -327,19 +385,57 @@ export function registerAfChecklistSubagentProvider(
 				running.allowSteerDelivery = false;
 				const watcherAbort = new AbortController();
 				running.abortController = watcherAbort;
-				abort = () => void runtime.stop(running as RunningSubagent);
+				abort = () => {
+					if (requestedStop) return;
+					requestedStop = runtime.stop(running as RunningSubagent);
+					void requestedStop.catch((error) => {
+						retainOwnership = true;
+						completeOnce({
+							launchId,
+							state: "failed",
+							error: paneCloseFailure(error),
+						});
+					});
+				};
 				value.signal?.addEventListener("abort", abort, { once: true });
 				if (value.signal?.aborted) abort();
-				const watch = runtime.trackCompletion(running, runtime.watch(running, watcherAbort.signal));
+				const watch = runtime.watch(running, watcherAbort.signal);
 				running.completionPromise = watch;
 				const result = await watch;
+				const requiredStop = shutdownStops.get(running) ?? requestedStop;
+				if (requiredStop) {
+					try {
+						await requiredStop;
+					} catch (error) {
+						retainOwnership = true;
+						completeOnce({ launchId, state: "failed", error: paneCloseFailure(error) });
+						return error;
+					}
+				}
+				if (result.timeoutKillFailed) {
+					const error = new Error(
+						"Checklist subagent timed out, but its pane could not be closed.",
+					);
+					retainOwnership = true;
+					completeOnce({ launchId, state: "failed", error: error.message });
+					return error;
+				}
+				runtime.releaseSlot(running);
 				runtime.route(pi, running, result);
 				completeOnce(completionFromResult(launchId, result));
 			} catch (error) {
 				if (running) {
 					try {
-						await runtime.stop(running);
-					} catch {}
+						await (requestedStop ?? runtime.stop(running));
+					} catch (stopError) {
+						retainOwnership = true;
+						completeOnce({
+							launchId,
+							state: "failed",
+							error: paneCloseFailure(stopError),
+						});
+						return stopError;
+					}
 					runtime.releaseSlot(running);
 					runningSubagents.delete(running.id);
 				} else {
@@ -352,8 +448,10 @@ export function registerAfChecklistSubagentProvider(
 				});
 			} finally {
 				if (abort) value.signal?.removeEventListener("abort", abort);
-				if (running) owned.delete(running);
+				if (running && !retainOwnership) owned.delete(running);
 			}
 		})();
+		activeTasks.add(task);
+		void task.finally(() => activeTasks.delete(task));
 	});
 }

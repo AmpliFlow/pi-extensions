@@ -26,8 +26,8 @@ The provider owns the launch policy:
 - `read`, `bash`, `edit`, and `write`
 - no skills, extensions, or child spawning
 - standalone temporary child session
-- no fixed wall-clock or idle timeout, so CI and deployment waits can finish
-- termination on cancellation or parent close
+- a six-hour wall-clock safety timeout by default, configurable with `PI_AF_CHECKLIST_TIMEOUT_SECONDS`, and no idle timeout
+- termination on cancellation or parent close, with shutdown waiting for in-flight pane launches and surfacing close failures
 - one right-side stack of split panes in Zellij
 - mandatory JSONL audit logging for finalized messages, tool activity, direct operator input, and lifecycle events
 - a trusted unattended-work policy: a finalized human approval authorizes its exact immediately downstream action, while unfinished human approval steps wait through AmpliFlow without requiring terminal attention

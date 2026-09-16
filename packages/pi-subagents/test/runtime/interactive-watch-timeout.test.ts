@@ -1,6 +1,7 @@
 import { appendFileSync } from "node:fs";
 import { watchSubagent } from "../../src/runtime/interactive-watch.js";
 import { stopRunningSubagent } from "../../src/runtime/running-registry.js";
+import { claimSpawnWidthSlot, releaseSpawnWidthSlot } from "../../src/runtime/spawn-width.js";
 import { writeSubagentExitSidecar } from "../../src/session/exit-sidecar.js";
 import { readSubagentTimeoutSidecar } from "../../src/session/timeout-sidecar.js";
 import type { RunningSubagent } from "../../src/types.js";
@@ -487,5 +488,25 @@ describe("interactive watcher timeout outcome", () => {
 
 		assert.equal(result.error, "cancelled");
 		assert.equal(replacementClosed, true, "a pane created after abort must be closed");
+	});
+
+	it("retains ownership when a required surface close fails", async () => {
+		const running = makeRunning(makeSession());
+		claimSpawnWidthSlot(running);
+		try {
+			await assert.rejects(
+				stopRunningSubagent(
+					running,
+					async () => {
+						throw new Error("zellij close failed");
+					},
+					{ requireSurfaceClose: true },
+				),
+				/zellij close failed/,
+			);
+			assert.equal(running.spawnWidthSlotAcquired, true);
+		} finally {
+			releaseSpawnWidthSlot(running);
+		}
 	});
 });

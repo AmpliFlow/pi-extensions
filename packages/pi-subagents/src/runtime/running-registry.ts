@@ -119,6 +119,7 @@ export function findTrackedSubagent(query: string): {
 export async function stopRunningSubagent(
 	running: RunningSubagent,
 	closeSurface: (running: RunningSubagent) => Promise<void>,
+	options: { requireSurfaceClose?: boolean } = {},
 ): Promise<void> {
 	clearSubagentShutdownTimer(running);
 	running.abortController?.abort();
@@ -135,7 +136,9 @@ export async function stopRunningSubagent(
 	}
 	try {
 		await closeSurface(running);
-	} catch {}
+	} catch (error) {
+		if (options.requireSurfaceClose) throw error;
+	}
 	releaseSpawnWidthSlot(running);
 }
 
