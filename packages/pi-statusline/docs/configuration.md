@@ -169,7 +169,7 @@ An empty `segments` array hides the main powerline while extension statuses can 
 
 ## 🔌 Extension statuses and icons
 
-Other extension statuses appear below the main powerline, wrap to terminal width, and are limited to five items.
+Other extension statuses appear below the main powerline, wrap to terminal width, and are limited to five items. The watcher group described below is separate and does not use one of those five slots.
 Icons use this order:
 
 1. Exact configured raw key, such as `goal` or `foo:server`.
@@ -192,3 +192,27 @@ For interoperable extensions, prefer one aggregated key or a stable coexistence 
 ```
 
 Put transient activity in the value, and clear the exact key that was set.
+
+### Watcher aggregation
+
+pi-statusline recognizes these installed watcher identities and renders them in this fixed order:
+
+| Label | Package identity | Legacy status key |
+| --- | --- | --- |
+| `PW` | `af-project-task` (source repository `af-task-watch`) | `af-task-watch` |
+| `CW` | `af-checklist-watch` | `af-checklist-watch` |
+| `IW` | `af-improvement-watch` | `af-improvement-watch` |
+| `RW` | `github-pr-review-watch` | `gh-review-watch` |
+| `SW` | `sentry-issue-watch` | `sentry-issue-watch` |
+
+Installation discovery reads user and project Pi package settings. It supports npm, GitHub Git, and local package sources. A watcher not installed in the current runner is omitted.
+
+The canonical keys are `watcher:pw`, `watcher:cw`, `watcher:iw`, `watcher:rw`, and `watcher:sw`. Each canonical value must be exactly one of:
+
+```text
+off polling queued working waiting paused error
+```
+
+A valid canonical value wins over the corresponding legacy value. Legacy values are mapped to the same vocabulary during rollout. If an installed watcher has no valid canonical or recognized legacy publisher value, the group shows `unavailable`, not `off`. If several installation sources make one watcher publisher ambiguous, it shows `conflict` and the existing duplicate-package diagnostic remains visible.
+
+The complete group uses plain labels and state words, reads Pi's live status map on each render, and wraps to the terminal width without dropping entries. Queue counts, record identities, errors, and recovery details remain in each watcher's own status command.

@@ -53,6 +53,7 @@ export default function statusline(pi: ExtensionAPI) {
 		thinkingLevel: "off",
 		duplicateExtensions: [],
 		extensionStatusIconAliases: EMPTY_EXTENSION_STATUS_ICON_ALIASES,
+		installedExtensionPackages: [],
 	};
 
 	let sessionGeneration = 0;
@@ -151,11 +152,13 @@ export default function statusline(pi: ExtensionAPI) {
 		runtime.gitStatus = undefined;
 		runtime.duplicateExtensions = [];
 		runtime.extensionStatusIconAliases = EMPTY_EXTENSION_STATUS_ICON_ALIASES;
+		runtime.installedExtensionPackages = [];
 		ctx.ui.setStatus(STATUSLINE_KEY, undefined);
 		if (!activeGitStatusTarget || !loaded) return;
 		const installedPackages = readInstalledExtensionPackages(cwd);
 		runtime.duplicateExtensions = findDuplicateExtensions(installedPackages);
 		runtime.extensionStatusIconAliases = buildExtensionStatusIconAliases(installedPackages);
+		runtime.installedExtensionPackages = installedPackages;
 		ctx.ui.setFooter((tui, theme, footerData) => {
 			runtime.requestRender = () => tui.requestRender();
 
@@ -185,6 +188,7 @@ export default function statusline(pi: ExtensionAPI) {
 						runtime.gitStatus = undefined;
 						runtime.duplicateExtensions = [];
 						runtime.extensionStatusIconAliases = EMPTY_EXTENSION_STATUS_ICON_ALIASES;
+						runtime.installedExtensionPackages = [];
 						runtime.requestRender = undefined;
 					}
 				},
@@ -293,6 +297,7 @@ export default function statusline(pi: ExtensionAPI) {
 		runtime.uiPrompt = undefined;
 		runtime.duplicateExtensions = [];
 		runtime.extensionStatusIconAliases = EMPTY_EXTENSION_STATUS_ICON_ALIASES;
+		runtime.installedExtensionPackages = [];
 		ctx.ui.setFooter(undefined);
 		ctx.ui.setStatus(STATUSLINE_KEY, undefined);
 		runtime.requestRender = undefined;

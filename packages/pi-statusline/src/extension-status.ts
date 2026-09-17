@@ -10,7 +10,82 @@ export type ExtensionStatusIconAliasMap = ReadonlyMap<string, readonly string[]>
 export interface ExtensionStatusRuntime {
 	duplicateExtensions: string[];
 	extensionStatusIconAliases: ExtensionStatusIconAliasMap;
+	installedExtensionPackages?: InstalledExtensionPackage[];
 }
+
+export interface InstalledExtensionPackage {
+	packageName: string;
+	source: string;
+	identity: string;
+}
+
+type WatcherState = "off" | "polling" | "queued" | "working" | "waiting" | "paused" | "error";
+
+interface WatcherDefinition {
+	id: string;
+	label: string;
+	packageNames: readonly string[];
+	legacyKeys: readonly string[];
+	parseLegacy(value: string): WatcherState | undefined;
+}
+
+const WATCHER_STATES = new Set<WatcherState>([
+	"off",
+	"polling",
+	"queued",
+	"working",
+	"waiting",
+	"paused",
+	"error",
+]);
+const WATCHERS: readonly WatcherDefinition[] = [
+	{
+		id: "pw",
+		label: "PW",
+		packageNames: ["af-project-task", "af-task-watch"],
+		legacyKeys: ["af-task-watch", "af-project-task"],
+		parseLegacy: parseProjectWatcherState,
+	},
+	{
+		id: "cw",
+		label: "CW",
+		packageNames: ["af-checklist-watch"],
+		legacyKeys: ["af-checklist-watch"],
+		parseLegacy: parseChecklistWatcherState,
+	},
+	{
+		id: "iw",
+		label: "IW",
+		packageNames: ["af-improvement-watch"],
+		legacyKeys: ["af-improvement-watch"],
+		parseLegacy: parseWorkerWatcherState,
+	},
+	{
+		id: "rw",
+		label: "RW",
+		packageNames: ["github-pr-review-watch"],
+		legacyKeys: ["gh-review-watch", "github-pr-review-watch"],
+		parseLegacy: parseReviewWatcherState,
+	},
+	{
+		id: "sw",
+		label: "SW",
+		packageNames: ["sentry-issue-watch"],
+		legacyKeys: ["sentry-issue-watch"],
+		parseLegacy: parseWorkerWatcherState,
+	},
+];
+const WATCHER_STATUS_KEYS = new Set(
+	WATCHERS.flatMap((watcher) => [`watcher:${watcher.id}`, ...watcher.legacyKeys]),
+);
+const WATCHER_KEY_PATTERN = /^watcher:([a-z0-9-]{1,16})$/u;
+const WATCHER_GIT_PACKAGE_NAMES: Readonly<Record<string, string>> = {
+	"af-task-watch": "af-project-task",
+	"af-checklist-watch": "af-checklist-watch",
+	"af-improvement-watch": "af-improvement-watch",
+	"github-pr-review-watch": "github-pr-review-watch",
+	"sentry-issue-watch": "sentry-issue-watch",
+};
 
 const STATUSLINE_KEY = "statusline";
 const COMPATIBLE_STATUS_ICON_KEYS: Readonly<Record<string, string>> = {
@@ -37,18 +112,139 @@ export function formatExtensionStatuses(
 	trueColor = true,
 ): string {
 	const separator = extensionStatusSeparator(config, theme, trueColor);
+	const watcherGroup = formatWatcherStatusGroup(statuses, runtime.installedExtensionPackages ?? []);
 	const visibleStatuses = [
 		...formatDuplicateExtensionStatus(runtime, theme),
 		...[...statuses.entries()]
 			.filter(
-				([key, value]) => key !== STATUSLINE_KEY && !hiddenKeys.has(key) && value.trim().length > 0,
+				([key, value]) =>
+					key !== STATUSLINE_KEY &&
+					!isWatcherStatusKey(key) &&
+					!hiddenKeys.has(key) &&
+					value.trim().length > 0,
 			)
 			.map(([key, value]) =>
 				formatExtensionStatus(key, value, theme, config, runtime.extensionStatusIconAliases),
 			),
 	].slice(0, 5);
 
-	return visibleStatuses.join(separator);
+	return [watcherGroup, ...visibleStatuses].filter(Boolean).join(separator);
+}
+
+export function formatWatcherStatusGroup(
+	statuses: ReadonlyMap<string, string>,
+	installedPackages: readonly InstalledExtensionPackage[],
+): string {
+	const known = WATCHERS.flatMap((watcher) => {
+		const installations = installedPackages.filter((extensionPackage) =>
+			watcher.packageNames.includes(extensionPackage.packageName),
+		);
+		if (installations.length === 0) return [];
+		const state = installations.length > 1 ? "conflict" : watcherState(watcher, statuses);
+		return [`${watcher.label}: ${state}`];
+	});
+	const knownIds = new Set(WATCHERS.map((watcher) => watcher.id));
+	const future = [...statuses.entries()]
+		.flatMap(([key, value]) => {
+			const id = WATCHER_KEY_PATTERN.exec(key)?.[1];
+			const state = canonicalWatcherState(value);
+			return id && !knownIds.has(id) && state ? [{ id, state }] : [];
+		})
+		.sort((left, right) => left.id.localeCompare(right.id))
+		.map(({ id, state }) => `${id.toUpperCase()}: ${state}`);
+	return [...known, ...future].join(" | ");
+}
+
+function isWatcherStatusKey(key: string): boolean {
+	return WATCHER_STATUS_KEYS.has(key) || WATCHER_KEY_PATTERN.test(key);
+}
+
+function watcherState(
+	watcher: WatcherDefinition,
+	statuses: ReadonlyMap<string, string>,
+): WatcherState | "unavailable" | "conflict" {
+	const canonical = canonicalWatcherState(statuses.get(`watcher:${watcher.id}`));
+	if (canonical) return canonical;
+
+	const legacyStates = watcher.legacyKeys.flatMap((key) => {
+		const value = statuses.get(key);
+		if (value === undefined) return [];
+		const state = canonicalWatcherState(value) ?? watcher.parseLegacy(value);
+		return state ? [state] : [];
+	});
+	const distinctStates = new Set(legacyStates);
+	if (distinctStates.size > 1) return "conflict";
+	return legacyStates[0] ?? "unavailable";
+}
+
+function canonicalWatcherState(value: string | undefined): WatcherState | undefined {
+	if (value === undefined) return undefined;
+	const normalized = value.trim().toLowerCase();
+	return WATCHER_STATES.has(normalized as WatcherState) ? (normalized as WatcherState) : undefined;
+}
+
+function parseProjectWatcherState(value: string): WatcherState | undefined {
+	const state = /(?:^|\s)af:(off|watch|queue|work|pause|error)(?:\s|$)/u.exec(
+		value.toLowerCase(),
+	)?.[1];
+	const states: Readonly<Record<string, WatcherState>> = {
+		off: "off",
+		watch: "polling",
+		queue: "queued",
+		work: "working",
+		pause: "paused",
+		error: "error",
+	};
+	return state ? states[state] : undefined;
+}
+
+function parseChecklistWatcherState(value: string): WatcherState | undefined {
+	const normalized = value.toLowerCase();
+	if (!normalized.startsWith("af-checklist")) return undefined;
+	if (/(?:^|\s)error(?:\s|$)/u.test(normalized)) return "error";
+	if (/(?:^|\s)paused(?:\s|$)/u.test(normalized)) return "paused";
+	const phase = /(?:^|\s)phase:([^\s]+)/u.exec(normalized)?.[1];
+	if (phase === "waiting_for_human") return "waiting";
+	if (phase === "paused" || phase === "stale") return "paused";
+	if (["awaiting_slot", "active", "resume_pending"].includes(phase ?? "")) return "working";
+	const queued = Number.parseInt(/(?:^|\s)q:(\d+)/u.exec(normalized)?.[1] ?? "0", 10);
+	if (queued > 0) return "queued";
+	return phase === "idle" ? "polling" : undefined;
+}
+
+function parseWorkerWatcherState(value: string): WatcherState | undefined {
+	const normalized = value.trim().toLowerCase();
+	if (normalized === "off") return "off";
+	if (normalized === "direct request active") return "working";
+	if (!normalized.startsWith("watching ")) return undefined;
+	const running = Number.parseInt(/(?:^|\|)\s*(\d+) running\b/u.exec(normalized)?.[1] ?? "0", 10);
+	if (running > 0) return "working";
+	const waiting = Number.parseInt(/(?:^|\|)\s*(\d+) waiting\b/u.exec(normalized)?.[1] ?? "0", 10);
+	return waiting > 0 ? "waiting" : "polling";
+}
+
+function parseReviewWatcherState(value: string): WatcherState | undefined {
+	const state = /(?:^|\s)gh:([^\s]+)/u.exec(value.toLowerCase())?.[1];
+	if (!state) return undefined;
+	const states: Readonly<Record<string, WatcherState>> = {
+		off: "off",
+		conn: "polling",
+		connecting: "polling",
+		poll: "polling",
+		polling: "polling",
+		watch: "polling",
+		watching: "polling",
+		queue: "queued",
+		queued: "queued",
+		work: "working",
+		working: "working",
+		rate_limited: "waiting",
+		waiting: "waiting",
+		pause: "paused",
+		paused: "paused",
+		error: "error",
+	};
+	return states[state];
 }
 
 export function formatExtensionStatus(
@@ -173,12 +369,6 @@ function escapeRegExp(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-interface InstalledExtensionPackage {
-	packageName: string;
-	source: string;
-	identity: string;
-}
-
 export function readInstalledExtensionPackages(cwd: string): InstalledExtensionPackage[] {
 	const packages: InstalledExtensionPackage[] = [];
 	const settingsFiles = extensionSettingsFiles(cwd);
@@ -301,6 +491,10 @@ function readPackageSources(settingsFile: string): string[] {
 
 function packageNameForSource(source: string, baseDirectory: string): string | undefined {
 	if (source.startsWith("npm:")) return npmPackageName(source);
+	const gitRepository = gitRepositoryName(source);
+	if (gitRepository && Object.hasOwn(WATCHER_GIT_PACKAGE_NAMES, gitRepository)) {
+		return WATCHER_GIT_PACKAGE_NAMES[gitRepository];
+	}
 	const packageJson = join(resolveSourcePath(source, baseDirectory), "package.json");
 	try {
 		const packageData = JSON.parse(readFileSync(packageJson, "utf8")) as { name?: unknown };
@@ -318,7 +512,26 @@ export function npmPackageName(source: string): string {
 
 function sourceIdentity(source: string, baseDirectory: string): string {
 	if (source.startsWith("npm:")) return `npm:${npmPackageName(source)}`;
+	const gitRepository = gitRepositoryPath(source);
+	if (gitRepository) return `git:${gitRepository}`;
 	return resolveSourcePath(source, baseDirectory);
+}
+
+function gitRepositoryName(source: string): string | undefined {
+	return gitRepositoryPath(source)?.split("/").at(-1);
+}
+
+function gitRepositoryPath(source: string): string | undefined {
+	const normalized = source
+		.replace(/^git:/u, "")
+		.replace(/^git\+https?:\/\//u, "")
+		.replace(/^git\+ssh:\/\/git@/u, "")
+		.replace(/^https?:\/\//u, "")
+		.replace(/^git@([^:]+):/u, "$1/");
+	const match = /^(?:www\.)?github\.com\/([^/]+)\/([^/#]+?)(?:\.git)?(?:[@#].*)?$/u.exec(
+		normalized,
+	);
+	return match ? `${match[1]}/${match[2]}` : undefined;
 }
 
 function resolveSourcePath(source: string, baseDirectory: string): string {

@@ -15,6 +15,7 @@ A representative uncolored layout:
 - Works immediately with a balanced default for model, thinking, workspace, Git, context, activity, and time.
 - Removes lower-priority segments before important information is clipped.
 - Shows when Pi is waiting for an extension UI prompt, streaming, or running tools.
+- Groups installed project, checklist, improvement, PR review, and Sentry watchers in one stable footer row.
 - Adds optional token, prompt-cache, provider usage, and cost details.
 - Offers three information levels, seven previewable palettes, and advanced custom layouts.
 - Uses ANSI-256 palette colors when Pi's effective terminal capabilities disable true color.
@@ -128,6 +129,18 @@ If the last remaining segment is itself wider than the row, that row renders emp
 - A linked or plain GitHub PR reference appears with the branch when possible, avoiding a duplicate extension status.
 - Context color changes to warning at 70% and error at 90%.
 - Git state is cached outside footer rendering and stale session results are ignored.
+
+### Watcher status
+
+When supported watcher packages are installed, pi-statusline adds one ordered group below the main powerline:
+
+```text
+PW: off | CW: polling | IW: queued | RW: working | SW: waiting
+```
+
+`PW`, `CW`, `IW`, `RW`, and `SW` identify the project task, checklist, improvement, GitHub PR review, and Sentry issue watchers. States use `off`, `polling`, `queued`, `working`, `waiting`, `paused`, or `error`. An installed watcher with no trustworthy published state shows `unavailable`; duplicate installation sources show `conflict`. Uninstalled watchers are omitted.
+
+The group adapts the watchers' legacy status keys during rollout, prefers a valid canonical `watcher:pw`, `watcher:cw`, `watcher:iw`, `watcher:rw`, or `watcher:sw` value, and reads live status data on every render. It wraps rather than dropping watchers at narrow widths and does not reduce the five slots available to unrelated extension statuses. See the [configuration reference](./docs/configuration.md#watcher-aggregation) for package identities and protocol details.
 
 ### Usage and context
 

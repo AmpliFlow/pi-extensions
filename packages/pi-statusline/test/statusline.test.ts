@@ -15,7 +15,11 @@ import { join } from "node:path";
 import { getCapabilities, setCapabilities, visibleWidth } from "@earendil-works/pi-tui";
 import { afterAll, test } from "vitest";
 import { createMockContext, createMockPi } from "../../../test/support.js";
-import { consumeStatuslineSettingsNotice } from "../src/settings.js";
+import {
+	formatExtensionStatuses,
+	type InstalledExtensionPackage,
+} from "../src/extension-status.js";
+import { consumeStatuslineSettingsNotice, createDefaultConfig } from "../src/settings.js";
 import type { ExtensionStatusIconAliasMap } from "../src/statusline.js";
 import statusline, {
 	buildExtensionStatusIconAliases,
@@ -1119,6 +1123,107 @@ test("extension status icon aliases preserve exact-key precedence and skip ambig
 		),
 		"running",
 	);
+});
+
+test("watcher aggregation coexists with five generic statuses and duplicate diagnostics", () => {
+	const theme = { fg: (_color: string, text: string) => text } as never;
+	const config = createDefaultConfig();
+	const installedExtensionPackages: InstalledExtensionPackage[] = [
+		{
+			packageName: "af-project-task",
+			source: "npm:af-project-task@1",
+			identity: "npm:af-project-task",
+		},
+	];
+	const rendered = formatExtensionStatuses(
+		new Map([
+			["watcher:pw", "polling"],
+			["one", "first"],
+			["two", "second"],
+			["three", "third"],
+			["four", "fourth"],
+			["five", "fifth"],
+			["six", "sixth"],
+		]),
+		theme,
+		config,
+		{
+			duplicateExtensions: [],
+			extensionStatusIconAliases: new Map(),
+			installedExtensionPackages,
+		},
+	);
+
+	assert.match(rendered, /PW: polling/u);
+	for (const value of ["first", "second", "third", "fourth", "fifth"]) {
+		assert.match(rendered, new RegExp(value, "u"));
+	}
+	assert.doesNotMatch(rendered, /sixth/u);
+
+	const duplicate = formatExtensionStatuses(new Map(), theme, config, {
+		duplicateExtensions: ["af-project-task"],
+		extensionStatusIconAliases: new Map(),
+		installedExtensionPackages,
+	});
+	assert.match(duplicate, /dup af-project-task/u);
+	assert.match(duplicate, /PW: unavailable/u);
+});
+
+test("watcher group wraps narrowly without dropping an installed watcher", () => {
+	const group = "PW: off | CW: polling | IW: queued | RW: working | SW: waiting";
+	const lines = wrapExtensionStatusline(group, 18);
+
+	assert.ok(lines.every((line) => visibleWidth(line) <= 18));
+	for (const label of ["PW:", "CW:", "IW:", "RW:", "SW:"]) {
+		assert.match(lines.join(" "), new RegExp(label, "u"));
+	}
+});
+
+test("statusline reads live watcher status on each render without polling", async () => {
+	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+	const root = mkdtempSync(join(tmpdir(), "pi-statusline-watcher-live-"));
+	const agentDir = join(root, "agent");
+	mkdirSync(agentDir, { recursive: true });
+	process.env.PI_CODING_AGENT_DIR = agentDir;
+	writeFileSync(
+		join(agentDir, "settings.json"),
+		JSON.stringify({ packages: ["npm:af-project-task@1.0.0"] }),
+	);
+
+	try {
+		const mock = createMockPi();
+		statusline(mock.pi);
+		const context = createMockContext({ mode: "tui" });
+		await emit(mock.events, "session_start", {}, context.ctx);
+		const statuses = new Map([["watcher:pw", "polling"]]);
+		const footerFactory = context.footer as (
+			tui: { requestRender(): void },
+			theme: { fg(color: string, text: string): string; bold(text: string): string },
+			footerData: {
+				getGitBranch(): string | null;
+				getExtensionStatuses(): ReadonlyMap<string, string>;
+				onBranchChange(callback: () => void): () => void;
+			},
+		) => { render(width: number): string[]; dispose(): void };
+		const footer = footerFactory(
+			{ requestRender() {} },
+			{ fg: (_color, text) => text, bold: (text) => text },
+			{
+				getGitBranch: () => null,
+				getExtensionStatuses: () => statuses,
+				onBranchChange: () => () => undefined,
+			},
+		);
+
+		assert.match(footer.render(200).join("\n"), /PW: polling/u);
+		statuses.set("watcher:pw", "working");
+		assert.match(footer.render(200).join("\n"), /PW: working/u);
+		footer.dispose();
+	} finally {
+		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+		rmSync(root, { recursive: true, force: true });
+	}
 });
 
 test("long extension status lines wrap to terminal width without ellipsis", () => {
