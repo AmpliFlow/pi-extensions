@@ -102,6 +102,8 @@ The runtime tracks the pane or tab it owns. Splits, stacks, floating panes, and 
 
 Checklist workers append finalized messages, tool calls, tool results, operator input in the child pane, lifecycle events, and completion output to the watcher's daily JSONL audit file under `~/.pi/agent/logs/af-checklist-watch/`. Records omit private reasoning and replace credential-shaped fields with a redaction marker and digest. The child shuts down if audit initialization fails.
 
+The fixed worker policy avoids preference questions for safe reversible choices. When a checklist requires a human decision, the worker prepares the complete exact artifact and asks one consolidated question. A fresh continuation worker treats the watcher's bounded handover as the context for the answer, keeps that artifact stable, and continues the unblocked work instead of redrafting or repeating the question.
+
 ## Installation
 
 The package loads TypeScript directly from `src/index.ts`:

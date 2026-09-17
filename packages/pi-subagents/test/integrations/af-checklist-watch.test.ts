@@ -160,6 +160,15 @@ describe("af-checklist-watch async subagent provider", () => {
 				env: "PI_SUBAGENT_ZELLIJ_PLACEMENT=right-stack",
 			},
 		});
+		expect(context.agentDefaultsOverride?.body).toContain(
+			"Do not ask for approval of safe, reversible choices or ordinary wording preferences",
+		);
+		expect(context.agentDefaultsOverride?.body).toContain(
+			"prepare the complete exact artifact and ask one consolidated question",
+		);
+		expect(context.agentDefaultsOverride?.body).toContain(
+			"Treat a continuation handover as the context for the answer",
+		);
 		expect(context.agentDefaultsOverride).not.toHaveProperty("idleTimeout");
 
 		h.completion.resolve(result());

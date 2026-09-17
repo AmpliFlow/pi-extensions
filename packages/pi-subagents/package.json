@@ -1,6 +1,6 @@
 {
 	"name": "@narumitw/pi-subagents",
-	"version": "3.0.1",
+	"version": "3.0.2",
 	"description": "Interactive and background named subagents for Pi, with asynchronous multiplexer sessions.",
 	"type": "module",
 	"license": "MIT",

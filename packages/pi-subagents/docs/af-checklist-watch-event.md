@@ -31,6 +31,7 @@ The provider owns the launch policy:
 - one right-side stack of split panes in Zellij
 - mandatory JSONL audit logging for finalized messages, tool activity, direct operator input, and lifecycle events
 - a trusted unattended-work policy: a finalized human approval authorizes its exact immediately downstream action, while unfinished human approval steps wait through AmpliFlow without requiring terminal attention
+- a decision policy that uses safe reversible defaults, prepares one complete artifact before mandatory approval, asks one consolidated question, and preserves the artifact across standalone continuation workers
 
 The request cannot override tools, model, execution budgets, environment, session policy, authorization policy, or execution mode. The provider rejects a missing interactive session, a mismatched working directory, an unavailable multiplexer, invalid input, cancellation before launch, or exhausted spawn capacity.
 
