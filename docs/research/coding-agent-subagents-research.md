@@ -1,7 +1,7 @@
 # Coding-Agent Subagents: Research Synthesis
 
 > **Historical research input:** This document synthesizes research available through 2026-08-10 and does not define current `pi-subagents` built-ins, tools, or routing.
-> See the [current bounded-job runtime](../../packages/pi-subagents/README.md) for maintained product behavior.
+> See the [current bounded-job runtime](https://github.com/AmpliFlow/pi-subagents#readme) for maintained product behavior.
 
 ## Purpose
 

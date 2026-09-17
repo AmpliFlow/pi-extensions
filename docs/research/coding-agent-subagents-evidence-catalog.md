@@ -1,7 +1,7 @@
 # Coding-Agent Subagents: Evidence Catalog
 
 > **Historical research input:** This catalog records research available through 2026-08-10 and does not define current `pi-subagents` behavior.
-> See the [research synthesis](coding-agent-subagents-research.md) for design conclusions and the [current bounded-job runtime](../../packages/pi-subagents/README.md) for maintained product behavior.
+> See the [research synthesis](coding-agent-subagents-research.md) for design conclusions and the [current bounded-job runtime](https://github.com/AmpliFlow/pi-subagents#readme) for maintained product behavior.
 
 ## Purpose and method
 

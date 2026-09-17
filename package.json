@@ -29,7 +29,6 @@
 			"./packages/pi-stamp/src/index.ts",
 			"./packages/pi-starship/src/index.ts",
 			"./packages/pi-statusline/src/index.ts",
-			"./packages/pi-subagents/src/index.ts",
 			"./packages/pi-sync/src/index.ts",
 			"./packages/pi-ticker/src/index.ts",
 			"./packages/pi-todo/src/index.ts",
