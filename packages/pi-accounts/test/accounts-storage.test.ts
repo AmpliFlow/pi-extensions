@@ -457,6 +457,7 @@ test("file storage rejects symlinks without reading or changing their targets", 
 	const file = join(dir, ACCOUNTS_FILE);
 	try {
 		await writeFile(target, JSON.stringify({ version: 1, providers: {} }), { mode: 0o644 });
+		await chmod(target, 0o644);
 		await symlink(target, file);
 		const store = new AccountStore(new FileAccountStorageBackend(file));
 

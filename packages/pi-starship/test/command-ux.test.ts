@@ -488,7 +488,9 @@ test("Configuration combines state, source, path, health, and diagnostics", asyn
 		assert.match(frame, /Configuration/u);
 		assert.match(frame, /State: Custom configuration/u);
 		assert.match(frame, /Source: User file/u);
-		assert.match(frame, /Path:[\s\S]*pi-starship\.toml/u);
+		const renderedPath = /Path:\s*([\s\S]*?)\nHealth:/u.exec(frame);
+		assert.ok(renderedPath);
+		assert.equal(renderedPath[1]?.replace(/\n/gu, ""), path);
 		assert.match(frame, /Health: 1 warning/u);
 		assert.match(frame, /future/u);
 		tui.press("ctrl+c");

@@ -26,6 +26,7 @@ test("loadLangfuseConfig reads pi-langfuse.json and enforces private permissions
 		}),
 		{ mode: 0o644 },
 	);
+	await chmod(path, 0o644);
 
 	const result = await loadLangfuseConfig(path);
 
