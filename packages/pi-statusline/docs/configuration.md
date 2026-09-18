@@ -199,7 +199,7 @@ pi-statusline recognizes these installed watcher identities and renders them in 
 
 | Label | Package identity | Legacy status key |
 | --- | --- | --- |
-| `PW` | `af-project-task` (source repository `af-task-watch`) | `af-task-watch` |
+| `PW` | `af-project-task-watch` | `af-task-watch` |
 | `CW` | `af-checklist-watch` | `af-checklist-watch` |
 | `IW` | `af-improvement-watch` | `af-improvement-watch` |
 | `RW` | `github-pr-review-watch` | `gh-review-watch` |

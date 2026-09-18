@@ -1130,9 +1130,9 @@ test("watcher aggregation coexists with five generic statuses and duplicate diag
 	const config = createDefaultConfig();
 	const installedExtensionPackages: InstalledExtensionPackage[] = [
 		{
-			packageName: "af-project-task",
-			source: "npm:af-project-task@1",
-			identity: "npm:af-project-task",
+			packageName: "af-project-task-watch",
+			source: "npm:af-project-task-watch@1",
+			identity: "npm:af-project-task-watch",
 		},
 	];
 	const rendered = formatExtensionStatuses(
@@ -1161,11 +1161,11 @@ test("watcher aggregation coexists with five generic statuses and duplicate diag
 	assert.doesNotMatch(rendered, /sixth/u);
 
 	const duplicate = formatExtensionStatuses(new Map(), theme, config, {
-		duplicateExtensions: ["af-project-task"],
+		duplicateExtensions: ["af-project-task-watch"],
 		extensionStatusIconAliases: new Map(),
 		installedExtensionPackages,
 	});
-	assert.match(duplicate, /dup af-project-task/u);
+	assert.match(duplicate, /dup af-project-task-watch/u);
 	assert.match(duplicate, /PW: unavailable/u);
 });
 
@@ -1191,7 +1191,7 @@ test("statusline reads live watcher status on each render without polling", asyn
 	process.env.PI_CODING_AGENT_DIR = agentDir;
 	writeFileSync(
 		join(agentDir, "settings.json"),
-		JSON.stringify({ packages: ["npm:af-project-task@1.0.0"] }),
+		JSON.stringify({ packages: ["npm:af-project-task-watch@1.0.0"] }),
 	);
 
 	try {

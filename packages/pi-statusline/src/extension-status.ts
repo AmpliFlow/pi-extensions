@@ -40,7 +40,7 @@ const WATCHERS: readonly WatcherDefinition[] = [
 	{
 		id: "pw",
 		label: "PW",
-		packageNames: ["af-project-task", "af-task-watch"],
+		packageNames: ["af-project-task-watch", "af-task-watch"],
 	},
 	{
 		id: "cw",
@@ -66,7 +66,8 @@ const WATCHERS: readonly WatcherDefinition[] = [
 const WATCHER_STATUS_KEYS = new Set(WATCHERS.map((watcher) => `watcher:${watcher.id}`));
 const WATCHER_KEY_PATTERN = /^watcher:([a-z0-9-]{1,16})$/u;
 const WATCHER_GIT_PACKAGE_NAMES: Readonly<Record<string, string>> = {
-	"af-task-watch": "af-project-task",
+	"af-project-task-watch": "af-project-task-watch",
+	"af-task-watch": "af-project-task-watch",
 	"af-checklist-watch": "af-checklist-watch",
 	"af-improvement-watch": "af-improvement-watch",
 	"github-pr-review-watch": "github-pr-review-watch",
