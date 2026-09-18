@@ -25,8 +25,6 @@ interface WatcherDefinition {
 	id: string;
 	label: string;
 	packageNames: readonly string[];
-	legacyKeys: readonly string[];
-	parseLegacy(value: string): WatcherState | undefined;
 }
 
 const WATCHER_STATES = new Set<WatcherState>([
@@ -43,41 +41,29 @@ const WATCHERS: readonly WatcherDefinition[] = [
 		id: "pw",
 		label: "PW",
 		packageNames: ["af-project-task", "af-task-watch"],
-		legacyKeys: ["af-task-watch", "af-project-task"],
-		parseLegacy: parseProjectWatcherState,
 	},
 	{
 		id: "cw",
 		label: "CW",
 		packageNames: ["af-checklist-watch"],
-		legacyKeys: ["af-checklist-watch"],
-		parseLegacy: parseChecklistWatcherState,
 	},
 	{
 		id: "iw",
 		label: "IW",
 		packageNames: ["af-improvement-watch"],
-		legacyKeys: ["af-improvement-watch"],
-		parseLegacy: parseWorkerWatcherState,
 	},
 	{
 		id: "rw",
 		label: "RW",
 		packageNames: ["github-pr-review-watch"],
-		legacyKeys: ["gh-review-watch", "github-pr-review-watch"],
-		parseLegacy: parseReviewWatcherState,
 	},
 	{
 		id: "sw",
 		label: "SW",
 		packageNames: ["sentry-issue-watch"],
-		legacyKeys: ["sentry-issue-watch"],
-		parseLegacy: parseWorkerWatcherState,
 	},
 ];
-const WATCHER_STATUS_KEYS = new Set(
-	WATCHERS.flatMap((watcher) => [`watcher:${watcher.id}`, ...watcher.legacyKeys]),
-);
+const WATCHER_STATUS_KEYS = new Set(WATCHERS.map((watcher) => `watcher:${watcher.id}`));
 const WATCHER_KEY_PATTERN = /^watcher:([a-z0-9-]{1,16})$/u;
 const WATCHER_GIT_PACKAGE_NAMES: Readonly<Record<string, string>> = {
 	"af-task-watch": "af-project-task",
@@ -166,91 +152,19 @@ function watcherState(
 	const canonical = canonicalWatcherState(statuses.get(`watcher:${watcher.id}`), watcher.label);
 	if (canonical) return canonical;
 
-	const legacyStates = watcher.legacyKeys.flatMap((key) => {
-		const value = statuses.get(key);
-		if (value === undefined) return [];
-		const state = canonicalWatcherState(value) ?? watcher.parseLegacy(value);
-		return state ? [state] : [];
-	});
-	const distinctStates = new Set(legacyStates);
-	if (distinctStates.size > 1) return "conflict";
-	return legacyStates[0] ?? "unavailable";
+	return "unavailable";
 }
 
 function canonicalWatcherState(
 	value: string | undefined,
-	expectedLabel?: string,
+	expectedLabel: string,
 ): WatcherState | undefined {
 	if (value === undefined) return undefined;
 	const normalized = value.trim().toLowerCase();
-	const prefix = expectedLabel ? `${expectedLabel.toLowerCase()}:` : undefined;
-	const state =
-		prefix && normalized.startsWith(prefix) ? normalized.slice(prefix.length).trim() : normalized;
+	const prefix = `${expectedLabel.toLowerCase()}:`;
+	if (!normalized.startsWith(prefix)) return undefined;
+	const state = normalized.slice(prefix.length).trim();
 	return WATCHER_STATES.has(state as WatcherState) ? (state as WatcherState) : undefined;
-}
-
-function parseProjectWatcherState(value: string): WatcherState | undefined {
-	const state = /(?:^|\s)af:(off|watch|queue|work|pause|error)(?:\s|$)/u.exec(
-		value.toLowerCase(),
-	)?.[1];
-	const states: Readonly<Record<string, WatcherState>> = {
-		off: "off",
-		watch: "polling",
-		queue: "queued",
-		work: "working",
-		pause: "paused",
-		error: "error",
-	};
-	return state ? states[state] : undefined;
-}
-
-function parseChecklistWatcherState(value: string): WatcherState | undefined {
-	const normalized = value.toLowerCase();
-	if (!normalized.startsWith("af-checklist")) return undefined;
-	if (/(?:^|\s)error(?:\s|$)/u.test(normalized)) return "error";
-	if (/(?:^|\s)paused(?:\s|$)/u.test(normalized)) return "paused";
-	const phase = /(?:^|\s)phase:([^\s]+)/u.exec(normalized)?.[1];
-	if (phase === "waiting_for_human") return "waiting";
-	if (phase === "paused" || phase === "stale") return "paused";
-	if (["awaiting_slot", "active", "resume_pending"].includes(phase ?? "")) return "working";
-	const queued = Number.parseInt(/(?:^|\s)q:(\d+)/u.exec(normalized)?.[1] ?? "0", 10);
-	if (queued > 0) return "queued";
-	return phase === "idle" ? "polling" : undefined;
-}
-
-function parseWorkerWatcherState(value: string): WatcherState | undefined {
-	const normalized = value.trim().toLowerCase();
-	if (normalized === "off") return "off";
-	if (normalized === "direct request active") return "working";
-	if (!normalized.startsWith("watching ")) return undefined;
-	const running = Number.parseInt(/(?:^|\|)\s*(\d+) running\b/u.exec(normalized)?.[1] ?? "0", 10);
-	if (running > 0) return "working";
-	const waiting = Number.parseInt(/(?:^|\|)\s*(\d+) waiting\b/u.exec(normalized)?.[1] ?? "0", 10);
-	return waiting > 0 ? "waiting" : "polling";
-}
-
-function parseReviewWatcherState(value: string): WatcherState | undefined {
-	const state = /(?:^|\s)gh:([^\s]+)/u.exec(value.toLowerCase())?.[1];
-	if (!state) return undefined;
-	const states: Readonly<Record<string, WatcherState>> = {
-		off: "off",
-		conn: "polling",
-		connecting: "polling",
-		poll: "polling",
-		polling: "polling",
-		watch: "polling",
-		watching: "polling",
-		queue: "queued",
-		queued: "queued",
-		work: "working",
-		working: "working",
-		rate_limited: "waiting",
-		waiting: "waiting",
-		pause: "paused",
-		paused: "paused",
-		error: "error",
-	};
-	return states[state];
 }
 
 export function formatExtensionStatus(

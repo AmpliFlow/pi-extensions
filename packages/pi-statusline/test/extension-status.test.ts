@@ -54,7 +54,7 @@ test("future canonical watcher keys follow known watchers in deterministic order
 	);
 });
 
-test("watcher protocol accepts labeled canonical values and raw rollout values", () => {
+test("watcher protocol accepts only matching labeled canonical values", () => {
 	for (const state of ["off", "polling", "queued", "working", "waiting", "paused", "error"]) {
 		assert.equal(
 			formatWatcherStatusGroup(new Map([["watcher:pw", `PW: ${state}`]]), [
@@ -65,7 +65,7 @@ test("watcher protocol accepts labeled canonical values and raw rollout values",
 	}
 	assert.equal(
 		formatWatcherStatusGroup(new Map([["watcher:pw", "polling"]]), [installed("af-project-task")]),
-		"PW: polling",
+		"PW: unavailable",
 	);
 	assert.equal(
 		formatWatcherStatusGroup(new Map([["watcher:pw", "CW: off"]]), [installed("af-project-task")]),
@@ -77,29 +77,16 @@ test("watcher protocol accepts labeled canonical values and raw rollout values",
 	);
 });
 
-test("watcher aliases adapt legacy keys and values", () => {
-	const packages = [
-		installed("af-project-task"),
-		installed("af-checklist-watch"),
-		installed("af-improvement-watch"),
-		installed("github-pr-review-watch"),
-		installed("sentry-issue-watch"),
-	];
-	const statuses = new Map([
-		["af-task-watch", "af:queue #14 q:2 done:1"],
-		["af-checklist-watch", "af-checklist #14 phase:waiting_for_human q:0 blocked:0"],
-		["af-improvement-watch", "watching registration,analyze | 1 running | 0 waiting"],
-		["gh-review-watch", "gh:rate_limited q:3 a:2 n:4"],
-		["sentry-issue-watch", "off"],
-	]);
-
+test("legacy watcher keys do not satisfy the canonical protocol", () => {
 	assert.equal(
-		formatWatcherStatusGroup(statuses, packages),
-		"PW: queued | CW: waiting | IW: working | RW: waiting | SW: off",
+		formatWatcherStatusGroup(new Map([["af-task-watch", "af:queue #14 q:2 done:1"]]), [
+			installed("af-project-task"),
+		]),
+		"PW: unavailable",
 	);
 });
 
-test("valid canonical watcher state wins over legacy state", () => {
+test("canonical watcher state ignores unrelated old status keys", () => {
 	assert.equal(
 		formatWatcherStatusGroup(
 			new Map([
