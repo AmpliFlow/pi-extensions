@@ -1137,7 +1137,7 @@ test("watcher aggregation coexists with five generic statuses and duplicate diag
 	];
 	const rendered = formatExtensionStatuses(
 		new Map([
-			["watcher:pw", "polling"],
+			["watcher:pw", "PW: polling"],
 			["one", "first"],
 			["two", "second"],
 			["three", "third"],
@@ -1169,14 +1169,18 @@ test("watcher aggregation coexists with five generic statuses and duplicate diag
 	assert.match(duplicate, /PW: unavailable/u);
 });
 
-test("watcher group wraps narrowly without dropping an installed watcher", () => {
+test("watcher group wraps narrowly without separating labels from states", () => {
 	const group = "PW: off | CW: polling | IW: queued | RW: working | SW: waiting";
 	const lines = wrapExtensionStatusline(group, 18);
 
+	assert.deepEqual(lines, [
+		"PW: off |",
+		"CW: polling |",
+		"IW: queued |",
+		"RW: working |",
+		"SW: waiting",
+	]);
 	assert.ok(lines.every((line) => visibleWidth(line) <= 18));
-	for (const label of ["PW:", "CW:", "IW:", "RW:", "SW:"]) {
-		assert.match(lines.join(" "), new RegExp(label, "u"));
-	}
 });
 
 test("statusline reads live watcher status on each render without polling", async () => {
@@ -1195,7 +1199,7 @@ test("statusline reads live watcher status on each render without polling", asyn
 		statusline(mock.pi);
 		const context = createMockContext({ mode: "tui" });
 		await emit(mock.events, "session_start", {}, context.ctx);
-		const statuses = new Map([["watcher:pw", "polling"]]);
+		const statuses = new Map([["watcher:pw", "PW: polling"]]);
 		const footerFactory = context.footer as (
 			tui: { requestRender(): void },
 			theme: { fg(color: string, text: string): string; bold(text: string): string },
@@ -1216,7 +1220,7 @@ test("statusline reads live watcher status on each render without polling", asyn
 		);
 
 		assert.match(footer.render(200).join("\n"), /PW: polling/u);
-		statuses.set("watcher:pw", "working");
+		statuses.set("watcher:pw", "PW: working");
 		assert.match(footer.render(200).join("\n"), /PW: working/u);
 		footer.dispose();
 	} finally {

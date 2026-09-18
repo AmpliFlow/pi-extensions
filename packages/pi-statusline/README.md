@@ -140,7 +140,7 @@ PW: off | CW: polling | IW: queued | RW: working | SW: waiting
 
 `PW`, `CW`, `IW`, `RW`, and `SW` identify the project task, checklist, improvement, GitHub PR review, and Sentry issue watchers. States use `off`, `polling`, `queued`, `working`, `waiting`, `paused`, or `error`. An installed watcher with no trustworthy published state shows `unavailable`; duplicate installation sources show `conflict`. Uninstalled watchers are omitted.
 
-The group adapts the watchers' legacy status keys during rollout, prefers a valid canonical `watcher:pw`, `watcher:cw`, `watcher:iw`, `watcher:rw`, or `watcher:sw` value, and reads live status data on every render. It wraps rather than dropping watchers at narrow widths and does not reduce the five slots available to unrelated extension statuses. See the [configuration reference](./docs/configuration.md#watcher-aggregation) for package identities and protocol details.
+Each watcher publishes its label inside the status value, so Pi's native footer shows `PW:`, `CW:`, `IW:`, `RW:`, or `SW:` instead of an ambiguous sequence such as `off off off`. The group adapts the watchers' legacy status keys and earlier unlabeled canonical values during rollout, prefers a valid labeled canonical `watcher:pw`, `watcher:cw`, `watcher:iw`, `watcher:rw`, or `watcher:sw` value, and reads live status data on every render. It wraps rather than dropping watchers at narrow widths and does not reduce the five slots available to unrelated extension statuses. See the [configuration reference](./docs/configuration.md#watcher-aggregation) for package identities and protocol details.
 
 ### Usage and context
 

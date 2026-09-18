@@ -207,12 +207,12 @@ pi-statusline recognizes these installed watcher identities and renders them in 
 
 Installation discovery reads user and project Pi package settings. It supports npm, GitHub Git, and local package sources. A watcher not installed in the current runner is omitted.
 
-The canonical keys are `watcher:pw`, `watcher:cw`, `watcher:iw`, `watcher:rw`, and `watcher:sw`. Each canonical value must be exactly one of:
+The canonical keys are `watcher:pw`, `watcher:cw`, `watcher:iw`, `watcher:rw`, and `watcher:sw`. Each value includes its matching uppercase label and one lifecycle state:
 
 ```text
-off polling queued working waiting paused error
+PW: off | CW: polling | IW: queued | RW: working | SW: waiting
 ```
 
-A valid canonical value wins over the corresponding legacy value. Legacy values are mapped to the same vocabulary during rollout. If an installed watcher has no valid canonical or recognized legacy publisher value, the group shows `unavailable`, not `off`. If several installation sources make one watcher publisher ambiguous, it shows `conflict` and the existing duplicate-package diagnostic remains visible.
+The lifecycle vocabulary is `off`, `polling`, `queued`, `working`, `waiting`, `paused`, and `error`. Keeping the label in the value makes each watcher identifiable in Pi's native footer, which displays values but not status keys. A valid labeled canonical value wins over the corresponding legacy value. Earlier unlabeled canonical values and legacy values remain accepted during rollout. A mismatched label is invalid. If an installed watcher has no valid canonical or recognized legacy publisher value, the group shows `unavailable`, not `off`. If several installation sources make one watcher publisher ambiguous, it shows `conflict` and the existing duplicate-package diagnostic remains visible.
 
 The complete group uses plain labels and state words, reads Pi's live status map on each render, and wraps to the terminal width without dropping entries. Queue counts, record identities, errors, and recovery details remain in each watcher's own status command.

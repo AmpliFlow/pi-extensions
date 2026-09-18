@@ -28,11 +28,11 @@ test("watcher protocol renders all installed watchers in stable order", () => {
 		installed("af-checklist-watch"),
 	];
 	const statuses = new Map([
-		["watcher:sw", "waiting"],
-		["watcher:rw", "working"],
-		["watcher:iw", "off"],
-		["watcher:cw", "queued"],
-		["watcher:pw", "polling"],
+		["watcher:sw", "SW: waiting"],
+		["watcher:rw", "RW: working"],
+		["watcher:iw", "IW: off"],
+		["watcher:cw", "CW: queued"],
+		["watcher:pw", "PW: polling"],
 	]);
 
 	assert.equal(
@@ -43,10 +43,10 @@ test("watcher protocol renders all installed watchers in stable order", () => {
 
 test("future canonical watcher keys follow known watchers in deterministic order", () => {
 	const statuses = new Map([
-		["watcher:zz", "waiting"],
-		["watcher:aa", "working"],
-		["watcher:invalid", "busy"],
-		["watcher:pw", "off"],
+		["watcher:zz", "ZZ: waiting"],
+		["watcher:aa", "AA: working"],
+		["watcher:invalid", "INVALID: busy"],
+		["watcher:pw", "PW: off"],
 	]);
 	assert.equal(
 		formatWatcherStatusGroup(statuses, [installed("af-project-task")]),
@@ -54,15 +54,25 @@ test("future canonical watcher keys follow known watchers in deterministic order
 	);
 });
 
-test("watcher protocol accepts only the canonical lifecycle vocabulary", () => {
+test("watcher protocol accepts labeled canonical values and raw rollout values", () => {
 	for (const state of ["off", "polling", "queued", "working", "waiting", "paused", "error"]) {
 		assert.equal(
-			formatWatcherStatusGroup(new Map([["watcher:pw", state]]), [installed("af-project-task")]),
+			formatWatcherStatusGroup(new Map([["watcher:pw", `PW: ${state}`]]), [
+				installed("af-project-task"),
+			]),
 			`PW: ${state}`,
 		);
 	}
 	assert.equal(
-		formatWatcherStatusGroup(new Map([["watcher:pw", "busy"]]), [installed("af-project-task")]),
+		formatWatcherStatusGroup(new Map([["watcher:pw", "polling"]]), [installed("af-project-task")]),
+		"PW: polling",
+	);
+	assert.equal(
+		formatWatcherStatusGroup(new Map([["watcher:pw", "CW: off"]]), [installed("af-project-task")]),
+		"PW: unavailable",
+	);
+	assert.equal(
+		formatWatcherStatusGroup(new Map([["watcher:pw", "PW: busy"]]), [installed("af-project-task")]),
 		"PW: unavailable",
 	);
 });
@@ -93,7 +103,7 @@ test("valid canonical watcher state wins over legacy state", () => {
 	assert.equal(
 		formatWatcherStatusGroup(
 			new Map([
-				["watcher:pw", "paused"],
+				["watcher:pw", "PW: paused"],
 				["af-task-watch", "af:work task:#37 q:0 done:0"],
 			]),
 			[installed("af-project-task")],
@@ -108,7 +118,7 @@ test("watchers distinguish unavailable publishers and conflicting installations"
 		"CW: unavailable",
 	);
 	assert.equal(
-		formatWatcherStatusGroup(new Map([["watcher:rw", "polling"]]), [
+		formatWatcherStatusGroup(new Map([["watcher:rw", "RW: polling"]]), [
 			installed(
 				"github-pr-review-watch",
 				"npm:github-pr-review-watch@1",
@@ -120,7 +130,7 @@ test("watchers distinguish unavailable publishers and conflicting installations"
 	);
 	const duplicate = installed("sentry-issue-watch");
 	assert.equal(
-		formatWatcherStatusGroup(new Map([["watcher:sw", "off"]]), [duplicate, duplicate]),
+		formatWatcherStatusGroup(new Map([["watcher:sw", "SW: off"]]), [duplicate, duplicate]),
 		"SW: conflict",
 	);
 });

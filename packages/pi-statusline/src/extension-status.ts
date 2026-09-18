@@ -147,7 +147,7 @@ export function formatWatcherStatusGroup(
 	const future = [...statuses.entries()]
 		.flatMap(([key, value]) => {
 			const id = WATCHER_KEY_PATTERN.exec(key)?.[1];
-			const state = canonicalWatcherState(value);
+			const state = id ? canonicalWatcherState(value, id.toUpperCase()) : undefined;
 			return id && !knownIds.has(id) && state ? [{ id, state }] : [];
 		})
 		.sort((left, right) => left.id.localeCompare(right.id))
@@ -163,7 +163,7 @@ function watcherState(
 	watcher: WatcherDefinition,
 	statuses: ReadonlyMap<string, string>,
 ): WatcherState | "unavailable" | "conflict" {
-	const canonical = canonicalWatcherState(statuses.get(`watcher:${watcher.id}`));
+	const canonical = canonicalWatcherState(statuses.get(`watcher:${watcher.id}`), watcher.label);
 	if (canonical) return canonical;
 
 	const legacyStates = watcher.legacyKeys.flatMap((key) => {
@@ -177,10 +177,16 @@ function watcherState(
 	return legacyStates[0] ?? "unavailable";
 }
 
-function canonicalWatcherState(value: string | undefined): WatcherState | undefined {
+function canonicalWatcherState(
+	value: string | undefined,
+	expectedLabel?: string,
+): WatcherState | undefined {
 	if (value === undefined) return undefined;
 	const normalized = value.trim().toLowerCase();
-	return WATCHER_STATES.has(normalized as WatcherState) ? (normalized as WatcherState) : undefined;
+	const prefix = expectedLabel ? `${expectedLabel.toLowerCase()}:` : undefined;
+	const state =
+		prefix && normalized.startsWith(prefix) ? normalized.slice(prefix.length).trim() : normalized;
+	return WATCHER_STATES.has(state as WatcherState) ? (state as WatcherState) : undefined;
 }
 
 function parseProjectWatcherState(value: string): WatcherState | undefined {
@@ -315,9 +321,24 @@ function statusKeyMatchesStatusBase(key: string, statusBase: string): boolean {
 	return key === statusBase || key.startsWith(`${statusBase}:`) || key.startsWith(`${statusBase}/`);
 }
 
+const WATCHER_LABEL_STATE_PATTERN = new RegExp(
+	`\\b([A-Z][A-Z0-9-]{0,15}:) (${[...WATCHER_STATES, "unavailable", "conflict"].join("|")})(?=\\s|$)`,
+	"gu",
+);
+
 export function wrapExtensionStatusline(status: string, width: number): string[] {
 	if (!status || width <= 0) return [];
-	return wrapTextWithAnsi(status, width);
+	const marker = unusedPrivateUseMarker(status);
+	const protectedStatus = status.replace(WATCHER_LABEL_STATE_PATTERN, `$1${marker}$2`);
+	return wrapTextWithAnsi(protectedStatus, width).map((line) => line.replaceAll(marker, " "));
+}
+
+function unusedPrivateUseMarker(value: string): string {
+	for (let codePoint = 0xe000; codePoint <= 0xf8ff; codePoint += 1) {
+		const marker = String.fromCodePoint(codePoint);
+		if (!value.includes(marker)) return marker;
+	}
+	return "\u{f0000}";
 }
 
 function formatDuplicateExtensionStatus(runtime: ExtensionStatusRuntime, theme: Theme): string[] {
